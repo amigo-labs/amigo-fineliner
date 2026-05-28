@@ -10,11 +10,15 @@
 #![forbid(unsafe_code)]
 
 pub mod color;
+pub mod command;
 pub mod document;
 pub mod error;
 pub mod geometry;
 
 pub use color::{BlendMode, Color};
+pub use command::{
+    AddLayer, Command, CommandBus, MoveLayer, RemoveLayer, ResizeCanvas, SetPixels, UndoStack,
+};
 pub use document::{
     CanvasSize, ColorProfile, Document, DocumentMetadata, ImageBuffer, Layer, LayerKind,
     MAX_CANVAS_DIM, MAX_LAYERS, MIN_CANVAS_DIM,
