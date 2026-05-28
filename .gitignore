@@ -1,0 +1,16 @@
+# Rust
+/target
+**/*.rs.bk
+
+# WASM build output (generated)
+crates/fineliner-wasm/pkg
+ui/src/lib/wasm/pkg
+
+# Node / Vite
+node_modules
+ui/dist
+ui/.svelte-kit
+
+# Editor / OS
+.DS_Store
+*.swp
