@@ -16,6 +16,7 @@ pub mod document;
 pub mod error;
 pub mod geometry;
 pub mod render;
+pub mod tools;
 
 pub use color::{BlendMode, Color};
 pub use command::{
@@ -28,3 +29,4 @@ pub use document::{
 pub use error::DocumentError;
 pub use geometry::{Point, Rect, Size};
 pub use render::compose;
+pub use tools::{Brush, Pencil};
