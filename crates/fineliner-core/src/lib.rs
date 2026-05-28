@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod codec;
 pub mod color;
 pub mod command;
 pub mod document;
