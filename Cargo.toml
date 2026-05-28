@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/fineliner-core",
-    # "crates/fineliner-wasm" is added in M5.
+    "crates/fineliner-wasm",
 ]
 
 [workspace.package]
