@@ -6,7 +6,10 @@
 
 use fineliner_core::codec::{to_jpeg_bytes, to_png_bytes, to_webp_bytes};
 use fineliner_core::command::{AddLayer, CommandBus, RemoveLayer};
-use fineliner_core::{compose, Brush, Color, Document, Pencil, Point};
+use fineliner_core::{
+    compose, Brush, BrushShape, Color, Document, Eraser, EraserMode, Eyedropper, Fill, FillOptions,
+    Move, Pencil, Point, SampleSize, SampleSource,
+};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
@@ -86,6 +89,62 @@ pub fn composite(handle: u32) -> Result<Clamped<Vec<u8>>, JsError> {
     })
 }
 
+/// Default brush shape when JS omits it (hard round preserves M5 behavior).
+fn default_shape() -> String {
+    "hard_round".to_string()
+}
+
+/// Default brush hardness when JS omits it.
+fn default_hardness() -> f32 {
+    1.0
+}
+
+/// Default eraser mode when JS omits it.
+fn default_eraser_mode() -> String {
+    "to_transparent".to_string()
+}
+
+/// Default color sample source when JS omits it.
+fn default_sample() -> String {
+    "current_layer".to_string()
+}
+
+/// Maps a brush-shape string to a [`BrushShape`], defaulting to hard round.
+fn parse_shape(s: &str) -> BrushShape {
+    match s {
+        "soft_round" => BrushShape::SoftRound,
+        "flat" => BrushShape::Flat,
+        _ => BrushShape::HardRound,
+    }
+}
+
+/// Maps an eraser-mode string to an [`EraserMode`], defaulting to transparent.
+fn parse_eraser_mode(s: &str) -> EraserMode {
+    match s {
+        "to_background" => EraserMode::ToBackground,
+        _ => EraserMode::ToTransparent,
+    }
+}
+
+/// Maps a sample-source string to a [`SampleSource`], defaulting to the layer.
+fn parse_sample(s: &str) -> SampleSource {
+    match s {
+        "all_layers" => SampleSource::AllLayers,
+        _ => SampleSource::CurrentLayer,
+    }
+}
+
+/// Maps an averaging edge length to a [`SampleSize`], defaulting to 1×1.
+fn sample_size(edge: u32) -> SampleSize {
+    match edge {
+        3 => SampleSize::ThreeByThree,
+        5 => SampleSize::FiveByFive,
+        11 => SampleSize::ElevenByEleven,
+        31 => SampleSize::ThirtyOneByThirtyOne,
+        _ => SampleSize::One,
+    }
+}
+
 /// A JSON-serializable command from JS (spec §17 `SerializedCommand`).
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -96,11 +155,45 @@ enum CommandSpec {
         size: u32,
         color: [u8; 4],
         opacity: f32,
+        #[serde(default = "default_shape")]
+        shape: String,
+        #[serde(default = "default_hardness")]
+        hardness: f32,
         points: Vec<[f32; 2]>,
         /// Identifies the pointer drag; segments sharing it merge into one undo
         /// step. The UI assigns a fresh id per pointer-down.
         stroke_id: u64,
     },
+    /// An eraser stroke over a polyline of `[x, y]` points.
+    EraserStroke {
+        layer: usize,
+        size: u32,
+        opacity: f32,
+        #[serde(default = "default_shape")]
+        shape: String,
+        #[serde(default = "default_hardness")]
+        hardness: f32,
+        #[serde(default = "default_eraser_mode")]
+        mode: String,
+        #[serde(default)]
+        background: [u8; 4],
+        points: Vec<[f32; 2]>,
+        stroke_id: u64,
+    },
+    /// A flood fill seeded at `[x, y]`.
+    FillBucket {
+        layer: usize,
+        color: [u8; 4],
+        opacity: f32,
+        tolerance: u8,
+        contiguous: bool,
+        #[serde(default = "default_sample")]
+        sample: String,
+        x: f32,
+        y: f32,
+    },
+    /// Translate a layer's contents by `(dx, dy)` pixels (the Move tool).
+    TranslateLayer { layer: usize, dx: i32, dy: i32 },
     /// Add a transparent layer above `active`.
     AddLayer { active: usize },
     /// Remove the layer at `index`.
@@ -118,6 +211,8 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             size,
             color,
             opacity,
+            shape,
+            hardness,
             points,
             stroke_id,
         } => {
@@ -125,7 +220,9 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
                 size,
                 Color::rgba(color[0], color[1], color[2], color[3]),
                 opacity,
-            );
+            )
+            .with_shape(parse_shape(&shape))
+            .with_hardness(hardness);
             let pts: Vec<Point> = points.iter().map(|p| Point::new(p[0], p[1])).collect();
             match Pencil::new(brush).stroke(layer, &pts, &bus.document) {
                 Some(cmd) => bus
@@ -134,11 +231,84 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
                 None => Ok(()), // stroke missed the canvas — no-op
             }
         }
+        CommandSpec::EraserStroke {
+            layer,
+            size,
+            opacity,
+            shape,
+            hardness,
+            mode,
+            background,
+            points,
+            stroke_id,
+        } => {
+            let brush = Brush::new(size, Color::TRANSPARENT, opacity)
+                .with_shape(parse_shape(&shape))
+                .with_hardness(hardness);
+            let eraser = Eraser::new(brush, parse_eraser_mode(&mode)).with_background(Color::rgba(
+                background[0],
+                background[1],
+                background[2],
+                background[3],
+            ));
+            let pts: Vec<Point> = points.iter().map(|p| Point::new(p[0], p[1])).collect();
+            match eraser.stroke(layer, &pts, &bus.document) {
+                Some(cmd) => bus
+                    .apply(Box::new(cmd.with_stroke(stroke_id)))
+                    .map_err(to_js),
+                None => Ok(()),
+            }
+        }
+        CommandSpec::FillBucket {
+            layer,
+            color,
+            opacity,
+            tolerance,
+            contiguous,
+            sample,
+            x,
+            y,
+        } => {
+            let options = FillOptions {
+                tolerance,
+                contiguous,
+                sample: parse_sample(&sample),
+            };
+            let fill = Fill::new(Color::rgba(color[0], color[1], color[2], color[3]), options)
+                .with_opacity(opacity);
+            match fill.fill(layer, Point::new(x, y), &bus.document) {
+                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                None => Ok(()),
+            }
+        }
+        CommandSpec::TranslateLayer { layer, dx, dy } => {
+            match Move.translate(layer, dx, dy, &bus.document) {
+                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                None => Ok(()),
+            }
+        }
         CommandSpec::AddLayer { active } => {
             bus.apply(Box::new(AddLayer::above(active))).map_err(to_js)
         }
         CommandSpec::RemoveLayer { index } => {
             bus.apply(Box::new(RemoveLayer::at(index))).map_err(to_js)
+        }
+    })
+}
+
+/// Samples a color at canvas point `(x, y)` (the Eyedropper tool).
+///
+/// `sample` is `"current_layer"` or `"all_layers"`; `size` is the averaging
+/// edge length (1, 3, 5, 11, or 31). Returns the 4 RGBA bytes, or an empty
+/// array if the point lies off the canvas. Sampling is not undoable, so this is
+/// a query, not a command.
+#[wasm_bindgen]
+pub fn pick_color(handle: u32, x: f32, y: f32, sample: &str, size: u32) -> Result<Vec<u8>, JsError> {
+    with_bus(handle, |bus| {
+        let eyedropper = Eyedropper::new(parse_sample(sample), sample_size(size));
+        match eyedropper.pick(Point::new(x, y), &bus.document) {
+            Some(c) => Ok(vec![c.r, c.g, c.b, c.a]),
+            None => Ok(Vec::new()),
         }
     })
 }
