@@ -5,6 +5,10 @@
 //! M6; here a tool simply turns a stroke (a polyline of points) into a
 //! [`SetPixels`] command.
 
+mod fill;
+
+pub use fill::{Fill, FillOptions, SampleSource};
+
 use crate::color::Color;
 use crate::command::SetPixels;
 use crate::document::{Document, ImageBuffer};
