@@ -1,13 +1,16 @@
 //! Drawing tools (spec §9).
 //!
-//! Phase-1 / M5 scope: the **Pencil** with a hard round brush. The full
-//! pointer-event [`Tool`] trait with modifiers, cursors and options arrives in
-//! M6; here a tool simply turns a stroke (a polyline of points) into a
-//! [`SetPixels`] command.
+//! M5–M6 scope: Pencil (hard/soft/flat brush), Eraser, Fill and Eyedropper.
+//! Each tool turns a gesture (a polyline of points, or a seed/sample point)
+//! into a [`SetPixels`] command — or, for the Eyedropper, a sampled color. The
+//! full pointer-event `Tool` trait with modifiers and cursors arrives with the
+//! UI wiring later in M6.
 
+mod eraser;
 mod eyedropper;
 mod fill;
 
+pub use eraser::{Eraser, EraserMode};
 pub use eyedropper::{Eyedropper, SampleSize};
 pub use fill::{Fill, FillOptions, SampleSource};
 
