@@ -40,8 +40,9 @@ later UI-wiring task. Order:
 - [x] **Fill / Paint Bucket** (`tools/fill.rs`) — BFS flood-fill, tolerance
   (Euclidean RGBA8), contiguous + all-pixels modes, sample current layer /
   all layers. Emits `SetPixels`. Spec §9.2 Fill.
-- [ ] **Eyedropper** (`tools/eyedropper.rs`) — sample current layer / composite,
-  size 1×1 / 3×3 / 5×5 / 11×11 / 31×31 avg. No command. Spec §9.2 Eyedropper.
+- [x] **Eyedropper** (`tools/eyedropper.rs`) — sample current layer / composite
+  (reuses `SampleSource`), size 1×1 / 3×3 / 5×5 / 11×11 / 31×31 avg, edge-clamped
+  neighborhood. Returns a `Color`, no command. Spec §9.2 Eyedropper.
 - [ ] **Brush engine generalization + Eraser** — add hardness + paint mode
   (Paint / Erase-to-transparent / Erase-to-bg) to the brush; Soft Round / Flat
   variants. Spec §9.2 Pencil/Eraser. (Touches tested Pencil — yield after.)
