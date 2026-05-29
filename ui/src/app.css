@@ -1,0 +1,26 @@
+@import 'tailwindcss';
+
+/* Fineliner dark palette (spec §16.9). */
+:root {
+  --fl-app-bg: #1e1e1e;
+  --fl-panel-bg: #252526;
+  --fl-panel-border: #3c3c3c;
+  --fl-accent: #0078d4;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--fl-app-bg);
+  color: #e0e0e0;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
+  overflow: hidden;
+}

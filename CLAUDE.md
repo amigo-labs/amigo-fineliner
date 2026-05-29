@@ -625,6 +625,30 @@ ADR-004: .fln project format is zstd-compressed MessagePack — 2026-05
   Decision: Use rmp-serde for serialization, zstd for compression.
   Rationale: Compact binary, fast, no external schema, easy to version.
              PNG embedding of preview thumbnail deferred to Phase 2.
+
+ADR-005: M1–M5 foundational dependencies — 2026-05
+  Decision: fineliner-core depends on uuid (v4+serde), thiserror, image
+            (png/jpeg/webp/bmp/gif/tiff), serde, serde_json; dev-deps insta,
+            proptest. fineliner-wasm depends on wasm-bindgen, js-sys, web-sys,
+            console_error_panic_hook, serde-wasm-bindgen.
+  Rationale: All are mandated by the spec (§13 codecs, §17 WASM API) and
+             CLAUDE.md (§5, §7). The `image` crate is the single codec dep
+             (CLAUDE.md M4: "image crate only, no system deps").
+
+ADR-006: Core does not read the system clock — 2026-05
+  Decision: DocumentMetadata timestamps default to 0; the platform layer
+            (wasm/Tauri) sets created_at/modified_at.
+  Rationale: std::time::SystemTime::now() panics on wasm32-unknown-unknown.
+             Keeping core clock-free preserves the "no platform deps" rule
+             (CLAUDE.md §5.1) and wasm-compatibility.
+
+ADR-007: WebP export is lossless in Phase 1 — 2026-05
+  Decision: encode_webp produces lossless WebP. The spec §13.2 asks for lossy
+            WebP (quality 1–100), but the pure-Rust `image` crate only encodes
+            lossless WebP, and CLAUDE.md forbids system deps (libwebp).
+  Rationale: Avoids a system dependency. Lossy WebP export is deferred; revisit
+            if a pure-Rust lossy encoder becomes available. PNG/JPEG cover the
+            lossy/lossless export needs for the M5 demo.
 ```
 
 ---
