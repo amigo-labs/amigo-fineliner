@@ -104,6 +104,12 @@ fn default_eraser_mode() -> String {
     "to_transparent".to_string()
 }
 
+/// Default eraser background when JS omits it: opaque white, matching the core
+/// [`Eraser`] default rather than serde's transparent-black zero value.
+fn default_background() -> [u8; 4] {
+    [255, 255, 255, 255]
+}
+
 /// Default color sample source when JS omits it.
 fn default_sample() -> String {
     "current_layer".to_string()
@@ -175,7 +181,7 @@ enum CommandSpec {
         hardness: f32,
         #[serde(default = "default_eraser_mode")]
         mode: String,
-        #[serde(default)]
+        #[serde(default = "default_background")]
         background: [u8; 4],
         points: Vec<[f32; 2]>,
         stroke_id: u64,
@@ -303,7 +309,13 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
 /// array if the point lies off the canvas. Sampling is not undoable, so this is
 /// a query, not a command.
 #[wasm_bindgen]
-pub fn pick_color(handle: u32, x: f32, y: f32, sample: &str, size: u32) -> Result<Vec<u8>, JsError> {
+pub fn pick_color(
+    handle: u32,
+    x: f32,
+    y: f32,
+    sample: &str,
+    size: u32,
+) -> Result<Vec<u8>, JsError> {
     with_bus(handle, |bus| {
         let eyedropper = Eyedropper::new(parse_sample(sample), sample_size(size));
         match eyedropper.pick(Point::new(x, y), &bus.document) {
