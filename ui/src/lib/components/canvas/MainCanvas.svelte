@@ -3,7 +3,7 @@
   import { editor } from '../../stores/editor.svelte';
   import { readComposite } from '../../core/controller';
   import { drawComposite } from '../../render/canvas2d';
-  import { attachPencil } from '../../tools/pointer';
+  import { attachTools } from '../../tools/pointer';
 
   let canvas: HTMLCanvasElement;
 
@@ -17,7 +17,7 @@
     }
   }
 
-  onMount(() => attachPencil(canvas, redraw));
+  onMount(() => attachTools(canvas, redraw));
 
   // Recompose whenever the document mutates.
   $effect(() => {

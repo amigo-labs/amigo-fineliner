@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { editor, resetColors, swapColors } from './lib/stores/editor.svelte';
+  import { editor, tool, resetColors, swapColors, type ToolKind } from './lib/stores/editor.svelte';
   import {
     newDocument,
     openFile,
@@ -15,6 +15,22 @@
 
   let fileInput: HTMLInputElement;
   let loadError = $state<string | null>(null);
+
+  // Single-key tool shortcuts (spec §9.2, §16.2).
+  const toolShortcuts: Record<string, ToolKind> = {
+    b: 'pencil',
+    e: 'eraser',
+    g: 'fill',
+    i: 'eyedropper',
+    v: 'move',
+  };
+  const toolLabels: Record<ToolKind, string> = {
+    pencil: 'Pencil',
+    eraser: 'Eraser',
+    fill: 'Fill',
+    eyedropper: 'Eyedropper',
+    move: 'Move',
+  };
 
   onMount(() => {
     // Start with a blank white-ish canvas so the demo is immediately usable.
@@ -51,6 +67,8 @@
       swapColors();
     } else if (!ctrl && e.key.toLowerCase() === 'd') {
       resetColors();
+    } else if (!ctrl && toolShortcuts[e.key.toLowerCase()]) {
+      tool.kind = toolShortcuts[e.key.toLowerCase()];
     }
   }
 </script>
@@ -106,7 +124,7 @@
       <footer
         class="flex items-center justify-between border-t border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] px-3 py-1 text-xs text-neutral-400"
       >
-        <span>Pencil</span>
+        <span>{toolLabels[tool.kind]}</span>
         <span>{editor.width} × {editor.height} · sRGB</span>
         <span>{loadError ?? 'Ready'}</span>
       </footer>
