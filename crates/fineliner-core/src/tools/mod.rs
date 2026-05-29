@@ -16,7 +16,25 @@ use crate::command::SetPixels;
 use crate::document::{Document, ImageBuffer};
 use crate::geometry::{Point, Rect};
 
-/// A hard round brush (spec §9.2 Pencil; soft/flat variants are M6).
+/// Brush tip shape (spec §9.2 Pencil "Brush shape").
+///
+/// `Hardness` is only meaningful for `SoftRound` and `Flat`; `HardRound` paints
+/// a crisp binary edge. Textured/custom tips are Phase 2 (spec §9.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum BrushShape {
+    /// A crisp circle with a binary edge.
+    #[default]
+    HardRound,
+    /// A circle whose coverage falls off toward the edge per `hardness`.
+    SoftRound,
+    /// A flat (calligraphic) nib oriented at 45°, softened per `hardness`.
+    Flat,
+}
+
+/// Minor/major axis ratio of the [`BrushShape::Flat`] nib.
+const FLAT_ASPECT: f32 = 0.35;
+
+/// A round/flat brush tip (spec §9.2 Pencil).
 #[derive(Debug, Clone, Copy)]
 pub struct Brush {
     /// Diameter in pixels, 1–500.
@@ -25,20 +43,206 @@ pub struct Brush {
     pub color: Color,
     /// Stroke opacity in `[0.0, 1.0]`.
     pub opacity: f32,
+    /// Tip shape.
+    pub shape: BrushShape,
+    /// Edge hardness in `[0.0, 1.0]` (soft/flat only); 1.0 is a crisp edge.
+    pub hardness: f32,
 }
 
 impl Brush {
-    /// Creates a brush, clamping size to 1–500 and opacity to `[0, 1]`.
+    /// Creates a hard-round brush, clamping size to 1–500 and opacity to `[0, 1]`.
     pub fn new(size: u32, color: Color, opacity: f32) -> Self {
         Self {
             size: size.clamp(1, 500),
             color,
             opacity: opacity.clamp(0.0, 1.0),
+            shape: BrushShape::HardRound,
+            hardness: 1.0,
         }
+    }
+
+    /// Sets the tip shape.
+    pub fn with_shape(mut self, shape: BrushShape) -> Self {
+        self.shape = shape;
+        self
+    }
+
+    /// Sets the edge hardness, clamped to `[0.0, 1.0]`.
+    pub fn with_hardness(mut self, hardness: f32) -> Self {
+        self.hardness = hardness.clamp(0.0, 1.0);
+        self
     }
 
     fn radius(&self) -> f32 {
         self.size as f32 / 2.0
+    }
+
+    /// Coverage in `[0.0, 1.0]` of the tip at offset `(dx, dy)` from its center.
+    fn coverage(&self, dx: f32, dy: f32) -> f32 {
+        let radius = self.radius();
+        match self.shape {
+            BrushShape::HardRound => {
+                if dx * dx + dy * dy <= radius * radius {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+            BrushShape::SoftRound => {
+                soft_falloff((dx * dx + dy * dy).sqrt(), radius, self.hardness)
+            }
+            BrushShape::Flat => {
+                // Rotate the offset into the nib's 45° frame, then test against a
+                // squashed unit ellipse (major axis = radius, minor = aspect).
+                let c = std::f32::consts::FRAC_1_SQRT_2;
+                let lx = dx * c + dy * c;
+                let ly = -dx * c + dy * c;
+                let minor = (radius * FLAT_ASPECT).max(0.5);
+                let d = ((lx / radius).powi(2) + (ly / minor).powi(2)).sqrt();
+                soft_falloff(d, 1.0, self.hardness)
+            }
+        }
+    }
+
+    /// Rasterizes a stroke over `points`, combining the tip coverage with the
+    /// existing pixels via `op`. `op` receives the effective source alpha
+    /// (`strength * coverage`) and the destination color, and returns the new
+    /// color. Returns the painted region and its new pixels, or `None` if the
+    /// stroke misses the canvas, the layer is invalid, or `strength <= 0`.
+    pub(crate) fn rasterize<F>(
+        &self,
+        layer_index: usize,
+        points: &[Point],
+        doc: &Document,
+        strength: f32,
+        mut op: F,
+    ) -> Option<(Rect, ImageBuffer)>
+    where
+        F: FnMut(f32, Color) -> Color,
+    {
+        if strength <= 0.0 {
+            return None;
+        }
+        let layer = doc.layers.get(layer_index)?;
+        let region = self.stroke_region(points, doc.canvas.width(), doc.canvas.height())?;
+        let mut after = layer.pixels.copy_region(region).ok()?;
+        if points.len() == 1 {
+            self.stamp(&mut after, region, points[0], strength, &mut op);
+        } else {
+            for pair in points.windows(2) {
+                self.stamp_segment(&mut after, region, pair[0], pair[1], strength, &mut op);
+            }
+        }
+        Some((region, after))
+    }
+
+    /// Bounding region of the stroke, clamped to the canvas. `None` if off-canvas.
+    fn stroke_region(&self, points: &[Point], cw: u32, ch: u32) -> Option<Rect> {
+        if points.is_empty() {
+            return None;
+        }
+        let r = self.radius() + 1.0;
+        let mut min_x = f32::MAX;
+        let mut min_y = f32::MAX;
+        let mut max_x = f32::MIN;
+        let mut max_y = f32::MIN;
+        for p in points {
+            min_x = min_x.min(p.x - r);
+            min_y = min_y.min(p.y - r);
+            max_x = max_x.max(p.x + r);
+            max_y = max_y.max(p.y + r);
+        }
+        let x0 = (min_x.floor() as i32).clamp(0, cw as i32);
+        let y0 = (min_y.floor() as i32).clamp(0, ch as i32);
+        let x1 = (max_x.ceil() as i32).clamp(0, cw as i32);
+        let y1 = (max_y.ceil() as i32).clamp(0, ch as i32);
+        if x1 <= x0 || y1 <= y0 {
+            return None;
+        }
+        Some(Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32))
+    }
+
+    /// Stamps one dab centered at canvas-space `center` into `buf` (whose origin
+    /// is `region`'s top-left), applying `op` per covered pixel.
+    fn stamp<F>(
+        &self,
+        buf: &mut ImageBuffer,
+        region: Rect,
+        center: Point,
+        strength: f32,
+        op: &mut F,
+    ) where
+        F: FnMut(f32, Color) -> Color,
+    {
+        let radius = self.radius();
+        let cx0 = (center.x - radius).floor() as i32;
+        let cy0 = (center.y - radius).floor() as i32;
+        let cx1 = (center.x + radius).ceil() as i32;
+        let cy1 = (center.y + radius).ceil() as i32;
+        for cy in cy0..=cy1 {
+            for cx in cx0..=cx1 {
+                let dx = cx as f32 + 0.5 - center.x;
+                let dy = cy as f32 + 0.5 - center.y;
+                let cov = self.coverage(dx, dy);
+                if cov <= 0.0 {
+                    continue;
+                }
+                let eff = (strength * cov).clamp(0.0, 1.0);
+                if eff <= 0.0 {
+                    continue;
+                }
+                let lx = cx - region.x;
+                let ly = cy - region.y;
+                if lx < 0 || ly < 0 || lx >= region.w as i32 || ly >= region.h as i32 {
+                    continue;
+                }
+                let dst = buf
+                    .get_pixel(lx as u32, ly as u32)
+                    .unwrap_or(Color::TRANSPARENT);
+                buf.set_pixel(lx as u32, ly as u32, op(eff, dst));
+            }
+        }
+    }
+
+    /// Stamps dabs evenly along the segment `a`→`b`.
+    fn stamp_segment<F>(
+        &self,
+        buf: &mut ImageBuffer,
+        region: Rect,
+        a: Point,
+        b: Point,
+        strength: f32,
+        op: &mut F,
+    ) where
+        F: FnMut(f32, Color) -> Color,
+    {
+        let dist = a.distance(b);
+        // Spacing of a quarter brush size keeps strokes solid without overdraw blowup.
+        let spacing = (self.size as f32 * 0.25).max(1.0);
+        let steps = (dist / spacing).ceil() as i32;
+        if steps == 0 {
+            self.stamp(buf, region, a, strength, op);
+            return;
+        }
+        for i in 0..=steps {
+            let t = i as f32 / steps as f32;
+            let p = Point::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
+            self.stamp(buf, region, p, strength, op);
+        }
+    }
+}
+
+/// Linear edge falloff: full coverage within `radius * hardness`, ramping to 0
+/// at `radius`. Returns 0 at or beyond `radius`.
+fn soft_falloff(dist: f32, radius: f32, hardness: f32) -> f32 {
+    if dist >= radius {
+        return 0.0;
+    }
+    let inner = radius * hardness;
+    if dist <= inner || radius <= inner {
+        1.0
+    } else {
+        1.0 - (dist - inner) / (radius - inner)
     }
 }
 
@@ -67,97 +271,14 @@ impl Pencil {
         points: &[Point],
         doc: &Document,
     ) -> Option<SetPixels> {
-        let layer = doc.layers.get(layer_index)?;
-        let region = self.stroke_region(points, doc.canvas.width(), doc.canvas.height())?;
-
-        // Start from the layer's current pixels in the region, then paint over.
-        let mut after = layer.pixels.copy_region(region).ok()?;
-        let ca = self.brush.color.a as f32 / 255.0 * self.brush.opacity;
-        if ca <= 0.0 {
-            return None;
-        }
-
-        if points.len() == 1 {
-            self.stamp(&mut after, region, points[0], ca);
-        } else {
-            for pair in points.windows(2) {
-                self.stamp_segment(&mut after, region, pair[0], pair[1], ca);
-            }
-        }
-
+        let color = self.brush.color;
+        let ca = color.a as f32 / 255.0 * self.brush.opacity;
+        let (region, after) = self
+            .brush
+            .rasterize(layer_index, points, doc, ca, |eff, dst| {
+                src_over(color, eff, dst)
+            })?;
         Some(SetPixels::new(layer_index, region, after).with_label("Pencil Stroke"))
-    }
-
-    /// Bounding region of the stroke, clamped to the canvas. `None` if off-canvas.
-    fn stroke_region(&self, points: &[Point], cw: u32, ch: u32) -> Option<Rect> {
-        if points.is_empty() {
-            return None;
-        }
-        let r = self.brush.radius() + 1.0;
-        let mut min_x = f32::MAX;
-        let mut min_y = f32::MAX;
-        let mut max_x = f32::MIN;
-        let mut max_y = f32::MIN;
-        for p in points {
-            min_x = min_x.min(p.x - r);
-            min_y = min_y.min(p.y - r);
-            max_x = max_x.max(p.x + r);
-            max_y = max_y.max(p.y + r);
-        }
-        let x0 = (min_x.floor() as i32).clamp(0, cw as i32);
-        let y0 = (min_y.floor() as i32).clamp(0, ch as i32);
-        let x1 = (max_x.ceil() as i32).clamp(0, cw as i32);
-        let y1 = (max_y.ceil() as i32).clamp(0, ch as i32);
-        if x1 <= x0 || y1 <= y0 {
-            return None;
-        }
-        Some(Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32))
-    }
-
-    /// Paints one round dab centered at canvas-space `center` into `buf`
-    /// (whose origin is `region`'s top-left).
-    fn stamp(&self, buf: &mut ImageBuffer, region: Rect, center: Point, ca: f32) {
-        let radius = self.brush.radius();
-        let r2 = radius * radius;
-        let cx0 = (center.x - radius).floor() as i32;
-        let cy0 = (center.y - radius).floor() as i32;
-        let cx1 = (center.x + radius).ceil() as i32;
-        let cy1 = (center.y + radius).ceil() as i32;
-        for cy in cy0..=cy1 {
-            for cx in cx0..=cx1 {
-                let dx = cx as f32 + 0.5 - center.x;
-                let dy = cy as f32 + 0.5 - center.y;
-                if dx * dx + dy * dy > r2 {
-                    continue;
-                }
-                let lx = cx - region.x;
-                let ly = cy - region.y;
-                if lx < 0 || ly < 0 || lx >= region.w as i32 || ly >= region.h as i32 {
-                    continue;
-                }
-                let dst = buf
-                    .get_pixel(lx as u32, ly as u32)
-                    .unwrap_or(Color::TRANSPARENT);
-                buf.set_pixel(lx as u32, ly as u32, src_over(self.brush.color, ca, dst));
-            }
-        }
-    }
-
-    /// Stamps dabs evenly along the segment `a`→`b`.
-    fn stamp_segment(&self, buf: &mut ImageBuffer, region: Rect, a: Point, b: Point, ca: f32) {
-        let dist = a.distance(b);
-        // Spacing of a quarter brush size keeps strokes solid without overdraw blowup.
-        let spacing = (self.brush.size as f32 * 0.25).max(1.0);
-        let steps = (dist / spacing).ceil() as i32;
-        if steps == 0 {
-            self.stamp(buf, region, a, ca);
-            return;
-        }
-        for i in 0..=steps {
-            let t = i as f32 / steps as f32;
-            let p = Point::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-            self.stamp(buf, region, p, ca);
-        }
     }
 }
 
@@ -242,5 +363,42 @@ mod tests {
         cmd.apply(&mut doc).unwrap();
         let a = doc.layers[0].pixels.get_pixel(5, 5).unwrap().a;
         assert!((126..=130).contains(&a), "got {a}");
+    }
+
+    #[test]
+    fn soft_round_edge_is_softer_than_center() {
+        // A fully-soft brush is opaque at the center and fades toward the rim.
+        let mut doc = Document::new(20, 20).unwrap();
+        let brush = Brush::new(20, Color::BLACK, 1.0)
+            .with_shape(BrushShape::SoftRound)
+            .with_hardness(0.0);
+        let mut cmd = Pencil::new(brush)
+            .stroke(0, &[Point::new(10.0, 10.0)], &doc)
+            .unwrap();
+        cmd.apply(&mut doc).unwrap();
+        let center = doc.layers[0].pixels.get_pixel(10, 10).unwrap().a;
+        let rim = doc.layers[0].pixels.get_pixel(10, 2).unwrap().a;
+        assert!(center > 200, "center alpha {center}");
+        assert!(
+            rim > 0 && rim < center,
+            "rim alpha {rim} vs center {center}"
+        );
+    }
+
+    #[test]
+    fn flat_brush_paints_along_its_45_degree_axis() {
+        // The flat nib's major axis runs along the +/+ diagonal; a point on that
+        // diagonal is covered, while an equidistant point off-axis is not.
+        let mut doc = Document::new(20, 20).unwrap();
+        let brush = Brush::new(20, Color::BLACK, 1.0).with_shape(BrushShape::Flat);
+        let mut cmd = Pencil::new(brush)
+            .stroke(0, &[Point::new(10.0, 10.0)], &doc)
+            .unwrap();
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!(doc.layers[0].pixels.get_pixel(15, 15), Some(Color::BLACK));
+        assert_eq!(
+            doc.layers[0].pixels.get_pixel(15, 5),
+            Some(Color::TRANSPARENT)
+        );
     }
 }

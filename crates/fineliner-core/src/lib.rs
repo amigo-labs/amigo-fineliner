@@ -29,4 +29,6 @@ pub use document::{
 pub use error::DocumentError;
 pub use geometry::{Point, Rect, Size};
 pub use render::compose;
-pub use tools::{Brush, Eyedropper, Fill, FillOptions, Pencil, SampleSize, SampleSource};
+pub use tools::{
+    Brush, BrushShape, Eyedropper, Fill, FillOptions, Pencil, SampleSize, SampleSource,
+};
