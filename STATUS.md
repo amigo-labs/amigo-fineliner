@@ -49,8 +49,9 @@ later UI-wiring task. Order:
   Textured/custom tip deferred to Phase 2 (spec §9.2).
 - [x] **Eraser** (`tools/eraser.rs`) — ToTransparent (reduces alpha) and
   ToBackground (composites bg color) on the shared rasterizer. Spec §9.2 Eraser.
-- [ ] **Move** (`tools/move_tool.rs`) — translate active-layer pixels, emit
-  `SetPixels` on pointer up. Spec §9.2 Move.
+- [x] **Move** (`tools/move_tool.rs`) — integer translate of a layer's pixels,
+  drops off-canvas content, clears the vacated area; emits `SetPixels` over the
+  whole layer. Auto-select / ghost / arrow-nudge are UI concerns. Spec §9.2 Move.
 - [ ] **UI + WASM wiring** — expose each tool over the WASM boundary, add
   toolbar buttons, pointer-event handlers, keyboard shortcuts. Spec §16.2.
 
