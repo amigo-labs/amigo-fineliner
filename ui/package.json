@@ -4,11 +4,12 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
+    "wasm": "cd ../crates/fineliner-wasm && wasm-pack build --target web --release --out-dir ../../ui/src/lib/wasm/pkg",
+    "dev": "pnpm run wasm && vite",
+    "build": "pnpm run wasm && vite build",
     "preview": "vite preview",
-    "check": "svelte-check --tsconfig ./tsconfig.json",
-    "lint": "svelte-check --tsconfig ./tsconfig.json"
+    "check": "pnpm run wasm && svelte-check --tsconfig ./tsconfig.json",
+    "lint": "pnpm run check"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.3",

@@ -8,8 +8,8 @@
 >
   <label class="flex items-center gap-2">
     <span class="text-neutral-400">Size</span>
-    <input type="range" min="1" max="100" bind:value={tool.size} class="w-32" />
-    <span class="w-8 tabular-nums text-neutral-300">{tool.size}</span>
+    <input type="range" min="1" max="500" bind:value={tool.size} class="w-32" />
+    <span class="w-10 tabular-nums text-neutral-300">{tool.size}</span>
   </label>
 
   <label class="flex items-center gap-2">

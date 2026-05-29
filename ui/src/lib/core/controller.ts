@@ -47,8 +47,11 @@ export async function openFile(file: File): Promise<void> {
   syncInfo();
 }
 
-/** Applies a pencil stroke over the given canvas-space points. */
-export function paintStroke(points: Array<[number, number]>): void {
+/** Applies a pencil stroke over the given canvas-space points.
+ *
+ * `strokeId` ties segments of one pointer drag together so they collapse into a
+ * single undo step; a fresh id per drag keeps distinct strokes separate. */
+export function paintStroke(points: Array<[number, number]>, strokeId: number): void {
   if (editor.handle === null || points.length === 0) {
     return;
   }
@@ -60,6 +63,7 @@ export function paintStroke(points: Array<[number, number]>): void {
     color: [r, g, b, 255],
     opacity: Math.min(1, Math.max(0, tool.opacity / 100)),
     points,
+    stroke_id: strokeId,
   };
   core.applyCommand(editor.handle, cmd);
   syncInfo();
@@ -99,6 +103,12 @@ export function exportPng(): void {
   const a = document.createElement('a');
   a.href = url;
   a.download = 'fineliner-export.png';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  // Defer cleanup so the browser has started the download (avoids a WebKit
+  // race where revoking synchronously cancels it).
+  setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 0);
 }

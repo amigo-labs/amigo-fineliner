@@ -31,6 +31,8 @@ export interface PencilStrokeCommand {
   color: [number, number, number, number];
   opacity: number;
   points: Array<[number, number]>;
+  /** Identifies the pointer drag; segments sharing it merge into one undo step. */
+  stroke_id: number;
 }
 
 let initialized: Promise<unknown> | null = null;
