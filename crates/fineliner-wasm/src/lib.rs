@@ -6,7 +6,7 @@
 
 use fineliner_core::codec::{to_jpeg_bytes, to_png_bytes, to_webp_bytes};
 use fineliner_core::command::{AddLayer, CommandBus, RemoveLayer};
-use fineliner_core::{compose, Brush, Color, Document, Layer, Pencil, Point};
+use fineliner_core::{compose, Brush, Color, Document, Pencil, Point};
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
 use wasm_bindgen::prelude::*;
@@ -63,8 +63,7 @@ pub fn create_document(width: u32, height: u32) -> Result<u32, JsError> {
 #[wasm_bindgen]
 pub fn open_image(data: &[u8], _mime_type: &str) -> Result<u32, JsError> {
     let buffer = fineliner_core::codec::decode(data).map_err(|e| JsError::new(&e.to_string()))?;
-    let mut doc = Document::new(buffer.width(), buffer.height()).map_err(to_js)?;
-    doc.layers[0] = Layer::from_pixels("Background", buffer);
+    let doc = Document::from_pixels(buffer).map_err(to_js)?;
     Ok(insert(CommandBus::new(doc)))
 }
 
@@ -83,7 +82,7 @@ pub fn close_document(handle: u32) {
 #[wasm_bindgen]
 pub fn composite(handle: u32) -> Result<Clamped<Vec<u8>>, JsError> {
     with_bus(handle, |bus| {
-        Ok(Clamped(compose(&bus.document.layers).into_raw()))
+        Ok(Clamped(compose(bus.document.layers()).into_raw()))
     })
 }
 
@@ -98,6 +97,9 @@ enum CommandSpec {
         color: [u8; 4],
         opacity: f32,
         points: Vec<[f32; 2]>,
+        /// Identifies the pointer drag; segments sharing it merge into one undo
+        /// step. The UI assigns a fresh id per pointer-down.
+        stroke_id: u64,
     },
     /// Add a transparent layer above `active`.
     AddLayer { active: usize },
@@ -117,6 +119,7 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             color,
             opacity,
             points,
+            stroke_id,
         } => {
             let brush = Brush::new(
                 size,
@@ -125,7 +128,9 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             );
             let pts: Vec<Point> = points.iter().map(|p| Point::new(p[0], p[1])).collect();
             match Pencil::new(brush).stroke(layer, &pts, &bus.document) {
-                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                Some(cmd) => bus
+                    .apply(Box::new(cmd.with_stroke(stroke_id)))
+                    .map_err(to_js),
                 None => Ok(()), // stroke missed the canvas — no-op
             }
         }
@@ -154,7 +159,7 @@ pub fn redo(handle: u32) -> Result<bool, JsError> {
 #[wasm_bindgen]
 pub fn export_png(handle: u32, compression: u8) -> Result<Vec<u8>, JsError> {
     with_bus(handle, |bus| {
-        to_png_bytes(&compose(&bus.document.layers), compression)
+        to_png_bytes(&compose(bus.document.layers()), compression)
             .map_err(|e| JsError::new(&e.to_string()))
     })
 }
@@ -163,7 +168,7 @@ pub fn export_png(handle: u32, compression: u8) -> Result<Vec<u8>, JsError> {
 #[wasm_bindgen]
 pub fn export_jpeg(handle: u32, quality: u8) -> Result<Vec<u8>, JsError> {
     with_bus(handle, |bus| {
-        to_jpeg_bytes(&compose(&bus.document.layers), quality)
+        to_jpeg_bytes(&compose(bus.document.layers()), quality)
             .map_err(|e| JsError::new(&e.to_string()))
     })
 }
@@ -172,7 +177,7 @@ pub fn export_jpeg(handle: u32, quality: u8) -> Result<Vec<u8>, JsError> {
 #[wasm_bindgen]
 pub fn export_webp(handle: u32) -> Result<Vec<u8>, JsError> {
     with_bus(handle, |bus| {
-        to_webp_bytes(&compose(&bus.document.layers)).map_err(|e| JsError::new(&e.to_string()))
+        to_webp_bytes(&compose(bus.document.layers())).map_err(|e| JsError::new(&e.to_string()))
     })
 }
 
@@ -194,7 +199,7 @@ pub fn get_document_info(handle: u32) -> Result<JsValue, JsError> {
         let info = DocumentInfo {
             width: bus.document.canvas.width(),
             height: bus.document.canvas.height(),
-            layer_count: bus.document.layers.len(),
+            layer_count: bus.document.layer_count(),
             active_layer: bus.document.active_layer_index(),
             can_undo: bus.history.can_undo(),
             can_redo: bus.history.can_redo(),
