@@ -1,6 +1,14 @@
 // Application logic bridging the WASM core and reactive state. Components call
 // these functions on events; no business logic lives in components (CLAUDE.md §5.4).
-import { core, initCore, type PencilStrokeCommand } from './wasm';
+import {
+  core,
+  initCore,
+  type PencilStrokeCommand,
+  type EraserStrokeCommand,
+  type FillBucketCommand,
+  type TranslateLayerCommand,
+  type Rgba,
+} from './wasm';
 import { editor, tool } from '../stores/editor.svelte';
 
 /** Parses a #RRGGBB string into RGB bytes, defaulting to black on bad input. */
@@ -10,6 +18,22 @@ function hexToRgb(hex: string): [number, number, number] {
     return [0, 0, 0];
   }
   return [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)];
+}
+
+/** Formats RGB bytes as a #RRGGBB string. */
+function rgbToHex(r: number, g: number, b: number): string {
+  return '#' + [r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('');
+}
+
+/** Opacity as a 0–1 fraction, clamped. */
+function opacity01(): number {
+  return Math.min(1, Math.max(0, tool.opacity / 100));
+}
+
+/** The active foreground (or background) color as opaque RGBA. */
+function activeColor(useBackground: boolean): Rgba {
+  const [r, g, b] = hexToRgb(useBackground ? tool.background : tool.foreground);
+  return [r, g, b, 255];
 }
 
 /** Refreshes derived document state from the core after a mutation. */
@@ -50,23 +74,104 @@ export async function openFile(file: File): Promise<void> {
 /** Applies a pencil stroke over the given canvas-space points.
  *
  * `strokeId` ties segments of one pointer drag together so they collapse into a
- * single undo step; a fresh id per drag keeps distinct strokes separate. */
-export function paintStroke(points: Array<[number, number]>, strokeId: number): void {
+ * single undo step; a fresh id per drag keeps distinct strokes separate.
+ * `useBackground` paints the background color (right-button, spec §9.2). */
+export function paintStroke(
+  points: Array<[number, number]>,
+  strokeId: number,
+  useBackground = false,
+): void {
   if (editor.handle === null || points.length === 0) {
     return;
   }
-  const [r, g, b] = hexToRgb(tool.foreground);
   const cmd: PencilStrokeCommand = {
     type: 'pencil_stroke',
     layer: editor.activeLayer,
     size: tool.size,
-    color: [r, g, b, 255],
-    opacity: Math.min(1, Math.max(0, tool.opacity / 100)),
+    color: activeColor(useBackground),
+    opacity: opacity01(),
+    shape: tool.shape,
+    hardness: Math.min(1, Math.max(0, tool.hardness / 100)),
     points,
     stroke_id: strokeId,
   };
   core.applyCommand(editor.handle, cmd);
   syncInfo();
+}
+
+/** Applies an eraser stroke over the given canvas-space points. */
+export function eraseStroke(points: Array<[number, number]>, strokeId: number): void {
+  if (editor.handle === null || points.length === 0) {
+    return;
+  }
+  const cmd: EraserStrokeCommand = {
+    type: 'eraser_stroke',
+    layer: editor.activeLayer,
+    size: tool.size,
+    opacity: opacity01(),
+    shape: tool.shape,
+    hardness: Math.min(1, Math.max(0, tool.hardness / 100)),
+    mode: tool.eraserMode,
+    background: activeColor(true), // 'To Background' erases to the bg swatch
+    points,
+    stroke_id: strokeId,
+  };
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Flood-fills from the given canvas-space point with the active color. */
+export function fillAt(x: number, y: number, useBackground = false): void {
+  if (editor.handle === null) {
+    return;
+  }
+  const cmd: FillBucketCommand = {
+    type: 'fill_bucket',
+    layer: editor.activeLayer,
+    color: activeColor(useBackground),
+    opacity: opacity01(),
+    tolerance: tool.tolerance,
+    contiguous: tool.contiguous,
+    sample: tool.fillSample,
+    x,
+    y,
+  };
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Translates the active layer's contents by `(dx, dy)` pixels. */
+export function moveLayer(dx: number, dy: number): void {
+  if (editor.handle === null || (dx === 0 && dy === 0)) {
+    return;
+  }
+  const cmd: TranslateLayerCommand = {
+    type: 'translate_layer',
+    layer: editor.activeLayer,
+    dx,
+    dy,
+  };
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Samples a color at the given point and sets it as the active color.
+ *
+ * Left button sets the foreground, right button the background (spec §9.2). */
+export function sampleColor(x: number, y: number, toBackground = false): void {
+  if (editor.handle === null) {
+    return;
+  }
+  const rgba = core.pickColor(editor.handle, x, y, tool.eyedropperSample, tool.sampleSize);
+  if (rgba.length < 3) {
+    return; // off-canvas
+  }
+  const hex = rgbToHex(rgba[0], rgba[1], rgba[2]);
+  if (toBackground) {
+    tool.background = hex;
+  } else {
+    tool.foreground = hex;
+  }
 }
 
 /** Reads the current composite as RGBA8 for rendering. */
