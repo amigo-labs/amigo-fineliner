@@ -32,11 +32,26 @@ that opens a PNG, paints with the Pencil, and exports a pixel-correct PNG.
   `cd crates/fineliner-wasm && wasm-pack build --target web --release --out-dir ../../ui/src/lib/wasm/pkg`,
   then `cd ui && pnpm install && pnpm dev`, open an image, paint, export.
 
-## Next concrete task — M6 (basic tool suite)
+## M6 — basic tool suite (in progress)
 
-Eraser, Fill (flood-fill + tolerance), Eyedropper, Move; Pencil brush variants
-(soft/flat). Each: Command + input handler + UI button + shortcut + tests.
-Implement the full pointer-event `Tool` trait (spec §9.1) deferred from M5.
+Milestone is L/XL, split into S/M core tasks (pure logic, test-first) plus a
+later UI-wiring task. Order:
+
+- [x] **Fill / Paint Bucket** (`tools/fill.rs`) — BFS flood-fill, tolerance
+  (Euclidean RGBA8), contiguous + all-pixels modes, sample current layer /
+  all layers. Emits `SetPixels`. Spec §9.2 Fill.
+- [ ] **Eyedropper** (`tools/eyedropper.rs`) — sample current layer / composite,
+  size 1×1 / 3×3 / 5×5 / 11×11 / 31×31 avg. No command. Spec §9.2 Eyedropper.
+- [ ] **Brush engine generalization + Eraser** — add hardness + paint mode
+  (Paint / Erase-to-transparent / Erase-to-bg) to the brush; Soft Round / Flat
+  variants. Spec §9.2 Pencil/Eraser. (Touches tested Pencil — yield after.)
+- [ ] **Move** (`tools/move_tool.rs`) — translate active-layer pixels, emit
+  `SetPixels` on pointer up. Spec §9.2 Move.
+- [ ] **UI + WASM wiring** — expose each tool over the WASM boundary, add
+  toolbar buttons, pointer-event handlers, keyboard shortcuts. Spec §16.2.
+
+Implement the full pointer-event `Tool` trait (spec §9.1) when wiring the UI;
+core tasks above keep the "stroke/seed → command" shape from M5.
 
 ## Open questions
 
