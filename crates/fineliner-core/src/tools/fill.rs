@@ -234,7 +234,7 @@ mod tests {
         let mut cmd = red_fill(FillOptions::default())
             .fill(0, Point::new(0.0, 0.0), &doc)
             .unwrap();
-        cmd.apply(&mut doc);
+        cmd.apply(&mut doc).unwrap();
         let red = Color::rgba(255, 0, 0, 255);
         assert_eq!(doc.layers[0].pixels.get_pixel(0, 0), Some(red));
         assert_eq!(doc.layers[0].pixels.get_pixel(1, 0), Some(red));
@@ -255,7 +255,7 @@ mod tests {
         let mut cmd = red_fill(FillOptions::default())
             .fill(0, Point::new(0.0, 0.0), &doc)
             .unwrap();
-        cmd.apply(&mut doc);
+        cmd.apply(&mut doc).unwrap();
         let red = Color::rgba(255, 0, 0, 255);
         assert_eq!(doc.layers[0].pixels.get_pixel(0, 0), Some(red));
         // The far white pixel is disconnected by the wall.
@@ -275,7 +275,7 @@ mod tests {
             ..FillOptions::default()
         };
         let mut cmd = red_fill(opts).fill(0, Point::new(0.0, 0.0), &doc).unwrap();
-        cmd.apply(&mut doc);
+        cmd.apply(&mut doc).unwrap();
         let red = Color::rgba(255, 0, 0, 255);
         // Both white pixels fill despite the wall; the wall itself does not.
         assert_eq!(doc.layers[0].pixels.get_pixel(0, 0), Some(red));
@@ -296,7 +296,7 @@ mod tests {
             ..FillOptions::default()
         };
         let mut cmd = red_fill(opts).fill(0, Point::new(0.0, 0.0), &doc).unwrap();
-        cmd.apply(&mut doc);
+        cmd.apply(&mut doc).unwrap();
         let red = Color::rgba(255, 0, 0, 255);
         assert_eq!(doc.layers[0].pixels.get_pixel(1, 0), Some(red));
     }
@@ -322,8 +322,8 @@ mod tests {
         let mut cmd = red_fill(FillOptions::default())
             .fill(0, Point::new(0.0, 0.0), &doc)
             .unwrap();
-        cmd.apply(&mut doc);
-        cmd.revert(&mut doc);
+        cmd.apply(&mut doc).unwrap();
+        cmd.revert(&mut doc).unwrap();
         assert_eq!(doc.layers[0].pixels.get_pixel(0, 0), Some(Color::WHITE));
         assert_eq!(doc.layers[0].pixels.get_pixel(1, 0), Some(Color::WHITE));
     }
@@ -347,7 +347,7 @@ mod tests {
         let mut cmd = red_fill(opts)
             .fill(top, Point::new(0.0, 0.0), &doc)
             .unwrap();
-        cmd.apply(&mut doc);
+        cmd.apply(&mut doc).unwrap();
         let red = Color::rgba(255, 0, 0, 255);
         // Fill landed on the top layer even though it was transparent there.
         assert_eq!(doc.layers[top].pixels.get_pixel(0, 0), Some(red));
