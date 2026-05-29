@@ -8,7 +8,7 @@
 use super::src_over;
 use crate::color::Color;
 use crate::command::SetPixels;
-use crate::document::Document;
+use crate::document::{Document, ImageBuffer};
 use crate::geometry::{Point, Rect};
 use crate::render::compose;
 
@@ -97,10 +97,15 @@ impl Fill {
             return None;
         }
 
-        // Buffer the tolerance comparison runs against.
-        let sample = match self.options.sample {
-            SampleSource::CurrentLayer => layer.pixels.clone(),
-            SampleSource::AllLayers => compose(doc.layers()),
+        // Buffer the tolerance comparison runs against. Borrow the target layer
+        // directly; only the composite needs allocating.
+        let composite;
+        let sample: &ImageBuffer = match self.options.sample {
+            SampleSource::CurrentLayer => &layer.pixels,
+            SampleSource::AllLayers => {
+                composite = compose(doc.layers());
+                &composite
+            }
         };
         let seed_color = sample.get_pixel(sx, sy)?;
         let tol = self.options.tolerance;

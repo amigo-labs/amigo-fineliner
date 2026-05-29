@@ -7,7 +7,7 @@
 
 use super::SampleSource;
 use crate::color::Color;
-use crate::document::Document;
+use crate::document::{Document, ImageBuffer};
 use crate::geometry::Point;
 use crate::render::compose;
 
@@ -63,9 +63,14 @@ impl Eyedropper {
     /// pixel of the neighborhood lies on the canvas (e.g. the point is well off
     /// the canvas).
     pub fn pick(&self, point: Point, doc: &Document) -> Option<Color> {
-        let buf = match self.sample {
-            SampleSource::CurrentLayer => doc.active_layer().pixels.clone(),
-            SampleSource::AllLayers => compose(doc.layers()),
+        // Borrow the active layer directly; only the composite needs allocating.
+        let composite;
+        let buf: &ImageBuffer = match self.sample {
+            SampleSource::CurrentLayer => &doc.active_layer().pixels,
+            SampleSource::AllLayers => {
+                composite = compose(doc.layers());
+                &composite
+            }
         };
 
         let cx = point.x.floor() as i32;
