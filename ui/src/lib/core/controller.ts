@@ -112,7 +112,7 @@ export function eraseStroke(points: Array<[number, number]>, strokeId: number): 
     shape: tool.shape,
     hardness: Math.min(1, Math.max(0, tool.hardness / 100)),
     mode: tool.eraserMode,
-    background: activeColor(false), // background-color erase target
+    background: activeColor(true), // 'To Background' erases to the bg swatch
     points,
     stroke_id: strokeId,
   };
