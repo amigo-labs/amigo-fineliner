@@ -16,9 +16,10 @@ use crate::render::compose;
 ///
 /// Filling always writes to the current layer; this only chooses the buffer
 /// the tolerance comparison runs against (spec §9.2 Fill "Sample").
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SampleSource {
     /// Compare against the target layer's own pixels.
+    #[default]
     CurrentLayer,
     /// Compare against the flattened composite of all layers.
     AllLayers,

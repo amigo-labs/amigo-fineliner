@@ -5,8 +5,10 @@
 //! M6; here a tool simply turns a stroke (a polyline of points) into a
 //! [`SetPixels`] command.
 
+mod eyedropper;
 mod fill;
 
+pub use eyedropper::{Eyedropper, SampleSize};
 pub use fill::{Fill, FillOptions, SampleSource};
 
 use crate::color::Color;
