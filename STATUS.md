@@ -43,9 +43,12 @@ later UI-wiring task. Order:
 - [x] **Eyedropper** (`tools/eyedropper.rs`) — sample current layer / composite
   (reuses `SampleSource`), size 1×1 / 3×3 / 5×5 / 11×11 / 31×31 avg, edge-clamped
   neighborhood. Returns a `Color`, no command. Spec §9.2 Eyedropper.
-- [ ] **Brush engine generalization + Eraser** — add hardness + paint mode
-  (Paint / Erase-to-transparent / Erase-to-bg) to the brush; Soft Round / Flat
-  variants. Spec §9.2 Pencil/Eraser. (Touches tested Pencil — yield after.)
+- [x] **Brush engine generalization** — `BrushShape` (HardRound/SoftRound/Flat)
+  + hardness with linear edge falloff; reusable `Brush::rasterize(op)` extracted
+  from Pencil. Hard round unchanged (default). Spec §9.2 Pencil brush shapes.
+  Textured/custom tip deferred to Phase 2 (spec §9.2).
+- [x] **Eraser** (`tools/eraser.rs`) — ToTransparent (reduces alpha) and
+  ToBackground (composites bg color) on the shared rasterizer. Spec §9.2 Eraser.
 - [ ] **Move** (`tools/move_tool.rs`) — translate active-layer pixels, emit
   `SetPixels` on pointer up. Spec §9.2 Move.
 - [ ] **UI + WASM wiring** — expose each tool over the WASM boundary, add
