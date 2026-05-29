@@ -1,9 +1,10 @@
 # STATUS
 
-## Current state — M1–M5 complete (Pencil demo)
+## Current state — M1–M6 complete (basic tool suite)
 
-The foundational pipeline is implemented and verified: a usable image editor
-that opens a PNG, paints with the Pencil, and exports a pixel-correct PNG.
+The foundational pipeline plus the M6 tool suite are implemented and verified:
+open/export, undo/redo, and Pencil (hard/soft/flat), Eraser, Fill, Eyedropper
+and Move tools wired end-to-end through WASM into the Svelte UI.
 
 ### Milestones done
 
@@ -32,10 +33,10 @@ that opens a PNG, paints with the Pencil, and exports a pixel-correct PNG.
   `cd crates/fineliner-wasm && wasm-pack build --target web --release --out-dir ../../ui/src/lib/wasm/pkg`,
   then `cd ui && pnpm install && pnpm dev`, open an image, paint, export.
 
-## M6 — basic tool suite (in progress)
+## M6 — basic tool suite (complete)
 
-Milestone is L/XL, split into S/M core tasks (pure logic, test-first) plus a
-later UI-wiring task. Order:
+Milestone was L/XL, split into S/M core tasks (pure logic, test-first) plus the
+UI-wiring task. Order:
 
 - [x] **Fill / Paint Bucket** (`tools/fill.rs`) — BFS flood-fill, tolerance
   (Euclidean RGBA8), contiguous + all-pixels modes, sample current layer /
@@ -52,11 +53,28 @@ later UI-wiring task. Order:
 - [x] **Move** (`tools/move_tool.rs`) — integer translate of a layer's pixels,
   drops off-canvas content, clears the vacated area; emits `SetPixels` over the
   whole layer. Auto-select / ghost / arrow-nudge are UI concerns. Spec §9.2 Move.
-- [ ] **UI + WASM wiring** — expose each tool over the WASM boundary, add
-  toolbar buttons, pointer-event handlers, keyboard shortcuts. Spec §16.2.
+- [x] **UI + WASM wiring** — `fineliner-wasm` gained `eraser_stroke`,
+  `fill_bucket`, `translate_layer` commands, optional brush shape/hardness on
+  `pencil_stroke`, and a `pick_color` query; the Svelte UI gained a tool-aware
+  pointer dispatcher, toolbar buttons, a per-tool options bar, and B/E/G/I/V
+  shortcuts. Spec §16.2, §16.3.
 
-Implement the full pointer-event `Tool` trait (spec §9.1) when wiring the UI;
-core tasks above keep the "stroke/seed → command" shape from M5.
+### Verification (M6)
+
+- `cargo test --workspace` green (98 core tests); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean.
+- `pnpm check`, `pnpm lint`, `pnpm build` all green (svelte-check 0 errors;
+  Vite production build succeeds, WASM bundled).
+- **Not yet done by a human:** visual browser run of the new tools. To verify:
+  `cd ui && pnpm dev`, then exercise Pencil/Eraser/Fill/Eyedropper/Move.
+
+## Next concrete task — M7 (layer system UI)
+
+Layer panel (add/delete/duplicate/reorder/visibility/lock/rename/opacity/blend),
+32×32 thumbnails, 999-layer cap, merge-visible / flatten. Spec §16 / M7.
+The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
+the "stroke/seed → command" shape — fold the trait in when a tool needs richer
+modifier/cursor state.
 
 ## Open questions
 
