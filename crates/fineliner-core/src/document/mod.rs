@@ -63,7 +63,11 @@ pub struct Document {
     /// Canvas dimensions.
     pub canvas: CanvasSize,
     /// Layers ordered bottom (index 0) to top.
-    pub layers: Vec<Layer>,
+    ///
+    /// Private so the ≥1-layer invariant, active-layer validity, and 999-layer
+    /// limit can only be changed through the methods below. Read access is via
+    /// [`Document::layers`].
+    pub(crate) layers: Vec<Layer>,
     /// Index of the active layer.
     active_layer: usize,
     /// Optional global selection mask; `None` means everything is selected.
@@ -88,6 +92,33 @@ impl Document {
             selection: None,
             metadata: DocumentMetadata::default(),
         })
+    }
+
+    /// Creates a document holding a single raster layer from `pixels`.
+    ///
+    /// The canvas matches the buffer's dimensions. Returns `InvalidCanvasSize`
+    /// if those dimensions are out of range.
+    pub fn from_pixels(pixels: ImageBuffer) -> Result<Self, DocumentError> {
+        let canvas = CanvasSize::new(pixels.width(), pixels.height())?;
+        Ok(Self {
+            id: Uuid::new_v4(),
+            title: "Untitled 1".to_string(),
+            canvas,
+            layers: vec![Layer::from_pixels("Background", pixels)],
+            active_layer: 0,
+            selection: None,
+            metadata: DocumentMetadata::default(),
+        })
+    }
+
+    /// Read-only view of the layers, ordered bottom (index 0) to top.
+    pub fn layers(&self) -> &[Layer] {
+        &self.layers
+    }
+
+    /// Number of layers (always ≥ 1).
+    pub fn layer_count(&self) -> usize {
+        self.layers.len()
     }
 
     /// Index of the active layer.

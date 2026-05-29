@@ -56,10 +56,14 @@ impl PixelEdit {
 /// Overwrites pixels on a layer. All drawing tools emit this command.
 ///
 /// Multiple `SetPixels` produced during one pointer drag merge into a single
-/// undo step via [`Command::merge_with`] (spec §7.3, §9.2 Pencil).
+/// undo step via [`Command::merge_with`] (spec §7.3, §9.2 Pencil). Merging is
+/// gated on a shared [`stroke_id`](SetPixels::with_stroke): only edits tagged
+/// with the same stroke coalesce, so separate strokes remain separate undo
+/// steps. A command with no stroke id never merges.
 pub struct SetPixels {
     edits: Vec<PixelEdit>,
     label: String,
+    stroke_id: Option<u64>,
 }
 
 impl SetPixels {
@@ -73,12 +77,20 @@ impl SetPixels {
                 after,
             }],
             label: "Edit Pixels".to_string(),
+            stroke_id: None,
         }
     }
 
     /// Sets the history label (e.g. "Pencil Stroke").
     pub fn with_label(mut self, label: impl Into<String>) -> Self {
         self.label = label.into();
+        self
+    }
+
+    /// Tags this command with a stroke id so consecutive edits from the same
+    /// pointer drag merge into one undo step (spec §7.3).
+    pub fn with_stroke(mut self, stroke_id: u64) -> Self {
+        self.stroke_id = Some(stroke_id);
         self
     }
 
@@ -109,13 +121,16 @@ impl Command for SetPixels {
     }
 
     fn merge_with(&mut self, newer: &dyn Command) -> bool {
-        // Coalesce consecutive pixel edits (one pointer drag) into one step.
-        // `newer` is already applied, so its `before` buffers are populated.
-        if let Some(other) = newer.as_any().downcast_ref::<SetPixels>() {
-            self.edits.extend(other.edits.iter().cloned());
-            true
-        } else {
-            false
+        // Coalesce consecutive pixel edits from the *same* pointer drag into one
+        // step. `newer` is already applied, so its `before` buffers are
+        // populated. Only merge when both carry the same stroke id; otherwise
+        // distinct strokes would collapse into a single undo step.
+        match newer.as_any().downcast_ref::<SetPixels>() {
+            Some(other) if self.stroke_id.is_some() && self.stroke_id == other.stroke_id => {
+                self.edits.extend(other.edits.iter().cloned());
+                true
+            }
+            _ => false,
         }
     }
 
@@ -153,10 +168,12 @@ mod tests {
     }
 
     #[test]
-    fn merge_with_combines_two_segments_into_one_step() {
+    fn merge_with_combines_two_segments_of_same_stroke() {
         let mut doc = Document::new(8, 8).unwrap();
-        let mut a = SetPixels::new(0, Rect::new(0, 0, 2, 2), solid_patch(2, 2, Color::WHITE));
-        let mut b = SetPixels::new(0, Rect::new(4, 4, 2, 2), solid_patch(2, 2, Color::WHITE));
+        let mut a = SetPixels::new(0, Rect::new(0, 0, 2, 2), solid_patch(2, 2, Color::WHITE))
+            .with_stroke(7);
+        let mut b = SetPixels::new(0, Rect::new(4, 4, 2, 2), solid_patch(2, 2, Color::WHITE))
+            .with_stroke(7);
         a.apply(&mut doc).unwrap();
         b.apply(&mut doc).unwrap();
 
@@ -173,5 +190,23 @@ mod tests {
             doc.layers[0].pixels.get_pixel(4, 4),
             Some(Color::TRANSPARENT)
         );
+    }
+
+    #[test]
+    fn merge_with_rejects_different_strokes() {
+        let mut a = SetPixels::new(0, Rect::new(0, 0, 2, 2), solid_patch(2, 2, Color::WHITE))
+            .with_stroke(1);
+        let b = SetPixels::new(0, Rect::new(4, 4, 2, 2), solid_patch(2, 2, Color::WHITE))
+            .with_stroke(2);
+        assert!(!a.merge_with(&b));
+        assert_eq!(a.edit_count(), 1);
+    }
+
+    #[test]
+    fn merge_with_rejects_untagged_commands() {
+        // Without a stroke id, two pixel edits stay independent undo steps.
+        let mut a = SetPixels::new(0, Rect::new(0, 0, 2, 2), solid_patch(2, 2, Color::WHITE));
+        let b = SetPixels::new(0, Rect::new(4, 4, 2, 2), solid_patch(2, 2, Color::WHITE));
+        assert!(!a.merge_with(&b));
     }
 }

@@ -102,22 +102,30 @@ impl Command for RemoveLayer {
 pub struct MoveLayer {
     from: usize,
     to: usize,
+    prev_active: usize,
 }
 
 impl MoveLayer {
     /// Moves the layer at `from` to `to`.
     pub fn new(from: usize, to: usize) -> Self {
-        Self { from, to }
+        Self {
+            from,
+            to,
+            prev_active: 0,
+        }
     }
 }
 
 impl Command for MoveLayer {
     fn apply(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        self.prev_active = doc.active_layer_index();
         doc.move_layer(self.from, self.to)
     }
 
     fn revert(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
-        doc.move_layer(self.to, self.from)
+        doc.move_layer(self.to, self.from)?;
+        // move_layer activates the moved layer; restore the prior selection.
+        doc.set_active_layer(self.prev_active)
     }
 
     fn label(&self) -> &str {
@@ -166,5 +174,19 @@ mod tests {
         assert_eq!(doc.layers[1].id, bottom_id);
         cmd.revert(&mut doc).unwrap();
         assert_eq!(doc.layers[0].id, bottom_id);
+    }
+
+    #[test]
+    fn move_layer_revert_restores_previous_active_layer() {
+        let mut doc = Document::new(8, 8).unwrap();
+        doc.add_layer("Layer 2").unwrap(); // 3 layers below, indices 0..=2
+        doc.add_layer("Layer 3").unwrap();
+        doc.set_active_layer(0).unwrap();
+
+        let mut cmd = MoveLayer::new(2, 0);
+        cmd.apply(&mut doc).unwrap();
+        cmd.revert(&mut doc).unwrap();
+        // The active layer selected before the move is restored.
+        assert_eq!(doc.active_layer_index(), 0);
     }
 }

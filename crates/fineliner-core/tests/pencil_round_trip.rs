@@ -6,7 +6,7 @@
 
 use fineliner_core::codec::{decode, to_png_bytes};
 use fineliner_core::command::Command;
-use fineliner_core::{compose, Brush, Color, Document, Layer, Pencil, Point};
+use fineliner_core::{compose, Brush, Color, Document, Pencil, Point};
 
 /// Builds a PNG of a solid white WxH image.
 fn white_png(w: u32, h: u32) -> Vec<u8> {
@@ -24,8 +24,7 @@ fn open_png_paint_pencil_export_png_is_pixel_correct() {
     // 1. Open: decode a white PNG into a single-layer document.
     let png = white_png(32, 32);
     let imported = decode(&png).unwrap();
-    let mut doc = Document::new(32, 32).unwrap();
-    doc.layers[0] = Layer::from_pixels("Background", imported);
+    let mut doc = Document::from_pixels(imported).unwrap();
 
     // 2. Paint: a black pencil stroke across the middle.
     let pencil = Pencil::new(Brush::new(5, Color::BLACK, 1.0));
@@ -35,7 +34,7 @@ fn open_png_paint_pencil_export_png_is_pixel_correct() {
     cmd.apply(&mut doc).unwrap();
 
     // 3. Export: compose and encode to PNG.
-    let composite = compose(&doc.layers);
+    let composite = compose(doc.layers());
     let exported = to_png_bytes(&composite, 6).unwrap();
 
     // 4. Verify: re-decode and check painted vs untouched pixels.
@@ -51,15 +50,14 @@ fn open_png_paint_pencil_export_png_is_pixel_correct() {
 #[test]
 fn paint_then_undo_then_export_matches_original() {
     let png = white_png(16, 16);
-    let mut doc = Document::new(16, 16).unwrap();
-    doc.layers[0] = Layer::from_pixels("Background", decode(&png).unwrap());
+    let mut doc = Document::from_pixels(decode(&png).unwrap()).unwrap();
 
     let pencil = Pencil::new(Brush::new(8, Color::BLACK, 1.0));
     let mut cmd = pencil.stroke(0, &[Point::new(8.0, 8.0)], &doc).unwrap();
     cmd.apply(&mut doc).unwrap();
     cmd.revert(&mut doc).unwrap();
 
-    let exported = to_png_bytes(&compose(&doc.layers), 6).unwrap();
+    let exported = to_png_bytes(&compose(doc.layers()), 6).unwrap();
     let back = decode(&exported).unwrap();
     // Every pixel back to white after undo.
     assert!(back
