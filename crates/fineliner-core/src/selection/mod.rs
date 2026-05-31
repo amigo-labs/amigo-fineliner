@@ -246,9 +246,11 @@ impl SelectionMask {
 ///
 /// Replace yields the new mask; the other modes start from the existing mask
 /// (or, when there is none, treat the canvas as fully selected for Subtract /
-/// Intersect and empty for Add). Returns `None` when the result selects nothing
-/// (the document treats `None` as "everything selected", so callers that mean
-/// "empty" must keep the mask — see [`SelectionMask::is_empty`]).
+/// Intersect and empty for Add). Always returns a concrete mask — never `None` —
+/// even when the result selects nothing. The caller decides whether to store it
+/// or clear the document's selection; note that a document's `None` selection
+/// means "everything selected", which is *not* the same as an all-zero mask
+/// (see [`SelectionMask::is_empty`]).
 pub fn apply_mode(
     existing: Option<&SelectionMask>,
     incoming: SelectionMask,
