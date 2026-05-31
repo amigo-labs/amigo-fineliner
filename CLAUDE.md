@@ -649,6 +649,20 @@ ADR-007: WebP export is lossless in Phase 1 — 2026-05
   Rationale: Avoids a system dependency. Lossy WebP export is deferred; revisit
             if a pure-Rust lossy encoder becomes available. PNG/JPEG cover the
             lossy/lossless export needs for the M5 demo.
+
+ADR-008: WASM layer API for M7 — 2026-05
+  Decision: get_document_info gains a `layers` array (id, name, opacity,
+            blend_mode as snake_case string, visible, locked), ordered
+            bottom-to-top. Adds get_layer_thumbnail(handle, layer_id) returning
+            a 32×32 RGBA8 Uint8ClampedArray. apply_command's SerializedCommand
+            gains DuplicateLayer, RenameLayer, SetLayerOpacity,
+            SetLayerBlendMode, SetLayerVisible, SetLayerLocked, MergeDown,
+            MergeVisible, FlattenImage.
+  Rationale: The layers panel (spec §16.5) needs per-layer state and thumbnails
+            (spec §5.3). get_layer_thumbnail is already named in the spec §17
+            API surface; the layer fields extend DocumentInfo rather than adding
+            a parallel call. Blend modes cross the JS boundary as stable
+            snake_case strings, matching the existing tool-option convention.
 ```
 
 ---

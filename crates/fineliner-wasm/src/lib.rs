@@ -5,10 +5,13 @@
 //! exported bytes (ADR-001). Commands are passed as JSON strings.
 
 use fineliner_core::codec::{to_jpeg_bytes, to_png_bytes, to_webp_bytes};
-use fineliner_core::command::{AddLayer, CommandBus, RemoveLayer};
+use fineliner_core::command::{
+    AddLayer, CommandBus, DuplicateLayer, FlattenImage, MergeDown, MergeVisible, RemoveLayer,
+    RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
+};
 use fineliner_core::{
-    compose, Brush, BrushShape, Color, Document, Eraser, EraserMode, Eyedropper, Fill, FillOptions,
-    Move, Pencil, Point, SampleSize, SampleSource,
+    compose, BlendMode, Brush, BrushShape, Color, Document, Eraser, EraserMode, Eyedropper, Fill,
+    FillOptions, ImageBuffer, Move, Pencil, Point, SampleSize, SampleSource,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -132,6 +135,66 @@ fn parse_eraser_mode(s: &str) -> EraserMode {
     }
 }
 
+/// Maps a snake_case blend-mode string to a [`BlendMode`], defaulting to Normal.
+fn parse_blend_mode(s: &str) -> BlendMode {
+    match s {
+        "multiply" => BlendMode::Multiply,
+        "screen" => BlendMode::Screen,
+        "overlay" => BlendMode::Overlay,
+        "darken" => BlendMode::Darken,
+        "lighten" => BlendMode::Lighten,
+        "color_dodge" => BlendMode::ColorDodge,
+        "color_burn" => BlendMode::ColorBurn,
+        "hard_light" => BlendMode::HardLight,
+        "soft_light" => BlendMode::SoftLight,
+        "difference" => BlendMode::Difference,
+        "exclusion" => BlendMode::Exclusion,
+        _ => BlendMode::Normal,
+    }
+}
+
+/// Maps a [`BlendMode`] to its stable snake_case string for the JS layer.
+fn blend_mode_str(mode: BlendMode) -> &'static str {
+    match mode {
+        BlendMode::Normal => "normal",
+        BlendMode::Multiply => "multiply",
+        BlendMode::Screen => "screen",
+        BlendMode::Overlay => "overlay",
+        BlendMode::Darken => "darken",
+        BlendMode::Lighten => "lighten",
+        BlendMode::ColorDodge => "color_dodge",
+        BlendMode::ColorBurn => "color_burn",
+        BlendMode::HardLight => "hard_light",
+        BlendMode::SoftLight => "soft_light",
+        BlendMode::Difference => "difference",
+        BlendMode::Exclusion => "exclusion",
+    }
+}
+
+/// Edge length of layer thumbnails (spec §5.3).
+const THUMBNAIL_DIM: u32 = 32;
+
+/// Downscales a layer buffer to a 32×32 RGBA8 thumbnail by nearest-neighbor
+/// sampling (spec §5.3).
+fn thumbnail(src: &ImageBuffer) -> Vec<u8> {
+    let mut out = vec![0u8; (THUMBNAIL_DIM * THUMBNAIL_DIM * 4) as usize];
+    let sw = src.width().max(1);
+    let sh = src.height().max(1);
+    for ty in 0..THUMBNAIL_DIM {
+        for tx in 0..THUMBNAIL_DIM {
+            let sx = (tx * sw / THUMBNAIL_DIM).min(sw - 1);
+            let sy = (ty * sh / THUMBNAIL_DIM).min(sh - 1);
+            let c = src.get_pixel(sx, sy).unwrap_or(Color::TRANSPARENT);
+            let i = ((ty * THUMBNAIL_DIM + tx) * 4) as usize;
+            out[i] = c.r;
+            out[i + 1] = c.g;
+            out[i + 2] = c.b;
+            out[i + 3] = c.a;
+        }
+    }
+    out
+}
+
 /// Maps a sample-source string to a [`SampleSource`], defaulting to the layer.
 fn parse_sample(s: &str) -> SampleSource {
     match s {
@@ -204,6 +267,24 @@ enum CommandSpec {
     AddLayer { active: usize },
     /// Remove the layer at `index`.
     RemoveLayer { index: usize },
+    /// Duplicate the layer at `index`, inserting the copy above it.
+    DuplicateLayer { index: usize },
+    /// Rename the layer at `index`.
+    RenameLayer { index: usize, name: String },
+    /// Set the opacity (0.0–1.0) of the layer at `index`.
+    SetLayerOpacity { index: usize, opacity: f32 },
+    /// Set the blend mode of the layer at `index` (snake_case string).
+    SetLayerBlendMode { index: usize, mode: String },
+    /// Show or hide the layer at `index`.
+    SetLayerVisible { index: usize, visible: bool },
+    /// Lock or unlock pixel edits on the layer at `index`.
+    SetLayerLocked { index: usize, locked: bool },
+    /// Merge the layer at `index` onto the layer below it.
+    MergeDown { index: usize },
+    /// Flatten all visible layers into one.
+    MergeVisible,
+    /// Flatten every layer onto an opaque white background.
+    FlattenImage,
 }
 
 /// Applies a JSON-encoded command to the document and records it in history.
@@ -299,6 +380,32 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
         CommandSpec::RemoveLayer { index } => {
             bus.apply(Box::new(RemoveLayer::at(index))).map_err(to_js)
         }
+        CommandSpec::DuplicateLayer { index } => bus
+            .apply(Box::new(DuplicateLayer::at(index)))
+            .map_err(to_js),
+        CommandSpec::RenameLayer { index, name } => bus
+            .apply(Box::new(RenameLayer::new(index, name)))
+            .map_err(to_js),
+        CommandSpec::SetLayerOpacity { index, opacity } => bus
+            .apply(Box::new(SetLayerOpacity::new(index, opacity)))
+            .map_err(to_js),
+        CommandSpec::SetLayerBlendMode { index, mode } => bus
+            .apply(Box::new(SetLayerBlendMode::new(
+                index,
+                parse_blend_mode(&mode),
+            )))
+            .map_err(to_js),
+        CommandSpec::SetLayerVisible { index, visible } => bus
+            .apply(Box::new(SetLayerVisible::new(index, visible)))
+            .map_err(to_js),
+        CommandSpec::SetLayerLocked { index, locked } => bus
+            .apply(Box::new(SetLayerLocked::new(index, locked)))
+            .map_err(to_js),
+        CommandSpec::MergeDown { index } => {
+            bus.apply(Box::new(MergeDown::at(index))).map_err(to_js)
+        }
+        CommandSpec::MergeVisible => bus.apply(Box::new(MergeVisible::new())).map_err(to_js),
+        CommandSpec::FlattenImage => bus.apply(Box::new(FlattenImage::new())).map_err(to_js),
     })
 }
 
@@ -363,6 +470,19 @@ pub fn export_webp(handle: u32) -> Result<Vec<u8>, JsError> {
     })
 }
 
+/// Per-layer state for the layers panel (spec §16.5).
+#[derive(Debug, Serialize)]
+struct LayerInfo {
+    /// Stable layer id (string form of the core `Uuid`).
+    id: String,
+    name: String,
+    opacity: f32,
+    /// Blend mode as a snake_case string (see [`blend_mode_str`]).
+    blend_mode: String,
+    visible: bool,
+    locked: bool,
+}
+
 /// Lightweight document state for the UI (spec §17 `DocumentInfo`).
 #[derive(Debug, Serialize)]
 struct DocumentInfo {
@@ -372,12 +492,27 @@ struct DocumentInfo {
     active_layer: usize,
     can_undo: bool,
     can_redo: bool,
+    /// Layers ordered bottom (index 0) to top, matching core storage order.
+    layers: Vec<LayerInfo>,
 }
 
 /// Returns the current document state as a plain JS object.
 #[wasm_bindgen]
 pub fn get_document_info(handle: u32) -> Result<JsValue, JsError> {
     with_bus(handle, |bus| {
+        let layers = bus
+            .document
+            .layers()
+            .iter()
+            .map(|l| LayerInfo {
+                id: l.id.to_string(),
+                name: l.name.clone(),
+                opacity: l.opacity,
+                blend_mode: blend_mode_str(l.blend_mode).to_string(),
+                visible: l.visible,
+                locked: l.locked,
+            })
+            .collect();
         let info = DocumentInfo {
             width: bus.document.canvas.width(),
             height: bus.document.canvas.height(),
@@ -385,8 +520,24 @@ pub fn get_document_info(handle: u32) -> Result<JsValue, JsError> {
             active_layer: bus.document.active_layer_index(),
             can_undo: bus.history.can_undo(),
             can_redo: bus.history.can_redo(),
+            layers,
         };
         serde_wasm_bindgen::to_value(&info).map_err(|e| JsError::new(&e.to_string()))
+    })
+}
+
+/// Returns a 32×32 RGBA8 thumbnail of the layer with `layer_id` as a
+/// `Uint8ClampedArray`, ready to wrap in an `ImageData` (spec §5.3, §17).
+#[wasm_bindgen]
+pub fn get_layer_thumbnail(handle: u32, layer_id: &str) -> Result<Clamped<Vec<u8>>, JsError> {
+    with_bus(handle, |bus| {
+        let layer = bus
+            .document
+            .layers()
+            .iter()
+            .find(|l| l.id.to_string() == layer_id)
+            .ok_or_else(|| JsError::new("layer not found"))?;
+        Ok(Clamped(thumbnail(&layer.pixels)))
     })
 }
 
