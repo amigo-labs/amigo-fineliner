@@ -5,11 +5,13 @@
 //! [`UndoStack`].
 
 mod layers;
+mod merge;
 mod pixels;
 mod properties;
 mod resize;
 
 pub use layers::{AddLayer, DuplicateLayer, MoveLayer, RemoveLayer};
+pub use merge::{FlattenImage, MergeDown, MergeVisible};
 pub use pixels::{PixelEdit, SetPixels};
 pub use properties::{
     RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
