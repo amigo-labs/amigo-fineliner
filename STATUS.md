@@ -120,34 +120,45 @@ Milestone is XL; split into M tasks (core test-first, then WASM, then UI):
   rasterizer (`StrokeCtx`) and Fill now scale each written pixel by the active
   mask's coverage (None = fully selected). 6 tests (round-trip, stroke outside /
   straddling selection, fill within selection). Spec §7.3.
-- [ ] **8D — WASM bindings**: selection commands (rect/ellipse/lasso/wand draws
-  carrying mode), Select All / Deselect / Invert / Expand / Contract / Feather,
-  and a selection-outline query for marching ants. Decision Log entry.
+- [x] **8D — WASM bindings** (ADR-009): `CommandSpec` gains `SelectRectangle`/
+  `SelectEllipse`/`SelectPolygon` (mode + feather), `SelectWand` (layer, seed,
+  tolerance, contiguous, sample, mode), and the modifiers `SelectAll` /
+  `Deselect` / `InvertSelection` / `ExpandSelection` / `ContractSelection` /
+  `FeatherSelection`. Masks build + combine (`apply_mode`) in Rust → one
+  `SetSelection`. `get_document_info` gains `has_selection`; new
+  `get_selection_bounds` and `get_selection_mask` queries for the overlay.
 - [ ] **8E — UI**: selection tools (M/L/W) pointer handling, mode modifiers
-  (Shift/Alt), and the marching-ants overlay (CSS animation, spec §8.5).
+  (Shift/Alt), Select All / Deselect / Invert menu/shortcuts, and the
+  marching-ants overlay (spec §8.5). Consume `get_selection_bounds` /
+  `get_selection_mask`; `has_selection` is already in `DocumentInfo`.
 
-### Verification (8A–8C)
+### Verification (8A–8D)
 
-- `cargo test --workspace` green (149 core tests); `cargo clippy --workspace
+- `cargo test --workspace` green (151 core tests); `cargo clippy --workspace
   --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+- `wasm-pack build --target web --release` succeeds; selection exports present
+  (`get_selection_bounds`, `get_selection_mask`). `pnpm check` 0 errors.
 
-The selection system is now fully functional at the core level: masks can be
-built (rect/ellipse/polygon/wand), modified (combine modes, invert, expand,
-contract, feather), stored undoably (`SetSelection`), and they constrain brush
-and fill writes. Selection is not yet exposed to JS or driven from the UI.
+The selection system is fully functional through the WASM boundary: masks build
+(rect/ellipse/polygon/wand), modify (combine modes, invert, expand, contract,
+feather), store undoably, and constrain brush/fill. Only the UI (8E) remains.
 
-## Next concrete task — M8 8D (WASM bindings)
+## Next concrete task — M8 8E (selection UI)
 
-Extend `apply_command`'s `CommandSpec` with selection draws that build a mask in
-Rust and combine it with the current selection via `apply_mode`:
-`SelectRectangle`/`SelectEllipse` (x, y, w, h, mode, feather), `SelectPolygon`
-(points, mode), `SelectWand` (x, y, tolerance, contiguous, sample, mode). Add
-the modifier commands `SelectAll`, `Deselect`, `InvertSelection`,
-`ExpandSelection`/`ContractSelection`/`FeatherSelection` (radius) — each reads
-`bus.document.selection`, computes the new mask, and applies a `SetSelection`
-(label it). Add a `get_selection_bounds` (or mask-export) query for the
-marching-ants overlay. Decision Log entry for the new API. Then 8E wires the M/
-L/W tools, mode modifiers (Shift/Alt), and the CSS marching-ants overlay (§8.5).
+Wire the selection tools into the Svelte UI:
+- Add `ToolKind`s `rect_select`, `ellipse_select`, `lasso`, `polygon_lasso`,
+  `magic_wand`; toolbar buttons + shortcuts (M cycles rect/ellipse, L cycles
+  the lassos, W = wand — see spec §16.2 keymap).
+- Pointer handlers (`tools/pointer.ts`): rubber-band drag for rect/ellipse
+  (Shift = square/circle), freehand point capture for Lasso, click-to-place +
+  double-click close for Polygonal Lasso, click for Magic Wand. Read Shift/Alt
+  into the selection `mode` (Shift=add, Alt=subtract, Shift+Alt=intersect).
+- Controller: `selectRectangle/Ellipse/Polygon/Wand`, `selectAll`, `deselect`,
+  `invertSelection`, `expand/contract/featherSelection`; mirror `has_selection`
+  + bounds into the store; Ctrl+A / Ctrl+D / Ctrl+Shift+I shortcuts.
+- Marching-ants overlay (`CanvasOverlay.svelte`, spec §8.5): fetch
+  `get_selection_mask`, trace the boundary onto an overlay canvas, animate the
+  dash offset. Verify visually in the browser.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
