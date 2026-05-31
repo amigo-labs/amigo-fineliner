@@ -159,13 +159,45 @@ Milestone was XL; split into M tasks (core test-first, then WASM, then UI):
 - Overlay rebuilds the boundary path on every document mutation (O(canvas));
   fine for Phase 1, a dirty-rect optimization belongs to M16.
 
-## Next concrete task — M9 (transform tools)
+## M9 — transform tools (in progress)
 
-Free Transform (translate/scale/rotate), Flip H/V (layer + canvas), Rotate
-90/180, Crop to selection / canvas, Resize canvas (9-grid anchor), Scale image
-(nearest/bilinear/bicubic). Spec §10 / M9. `transform/` is a new core module
-(CLAUDE.md §5.1); start with the affine + interpolation core (test-first:
-rotate 90×4 = identity, scale ×2 then ×0.5 ≈ identity) before the UI.
+Milestone is XL; split into M tasks (core test-first, then commands, then UI):
+
+- [x] **9A — transform buffer primitives** (`transform/mod.rs`): `flip_horizontal`/
+  `flip_vertical`, `rotate_90_cw`/`rotate_90_ccw`/`rotate_180` (exact index
+  permutations), `Interpolation` (Nearest/Bilinear/Bicubic), and `scale` (per-
+  channel f32 sampling, Catmull-Rom bicubic). 12 tests (rotate 90×4 = identity,
+  flip twice = identity, scale ×2→×0.5 bicubic ≈ identity, nearest exact).
+- [ ] **9B — layer/canvas transform commands** (core): `TransformLayer` (apply a
+  flip/rotate/scale to the active layer's buffer, undoable) and the canvas ops
+  `FlipCanvas`/`RotateCanvas` (all layers) + `ScaleImage` (all layers, resizes
+  canvas) + `ResizeCanvas` anchor padding + `CropToSelection`. Mind the
+  canvas-sized-layer invariant: 90° rotation/scale changes dims, so these are
+  canvas-level (resize canvas + transform every layer together) except a layer
+  flip/180 which keeps dims. Tests: round-trips, all-layers consistency.
+- [ ] **9C — Free Transform math** (core): compose translate/scale/rotate into an
+  affine applied to a layer with chosen interpolation (the interactive
+  `TransformLayer` from spec §10.1). May fold into 9B if small.
+- [ ] **9D — WASM bindings**: flip/rotate/scale-image/resize-canvas/crop commands
+  + the resize/scale dialog parameters. Decision Log entry.
+- [ ] **9E — UI**: Image/Layer menus (flip, rotate 90/180), Resize Canvas and
+  Scale Image dialogs (9-grid anchor, interpolation), Free Transform handles
+  (Ctrl+T) and Crop to selection. Spec §10, §16.
+
+### Verification (9A)
+
+- `cargo test --workspace` green (163 core tests); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+## Next concrete task — M9 9B (layer/canvas transform commands)
+
+See the 9B bullet above. Key design point: a layer's `pixels` must stay
+canvas-sized, so 90° rotation and scaling are canvas-level operations (resize
+the canvas and transform every layer in lockstep); only flips and 180° rotation
+preserve dimensions and can be a pure per-layer `TransformLayer`. Decide the
+`TransformLayer` shape (enum of flip/rotate kinds vs. a general affine) — the
+spec emits `TransformLayer` for flips/rotations (§10.2/§10.3) and Free Transform
+(§10.1), so a kind-enum now with an affine variant later is reasonable.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
