@@ -4,7 +4,8 @@
 //! regular Polygon — onto the current layer, emitting a single [`SetPixels`] on
 //! commit. Each shape is evaluated through a signed-distance field (negative
 //! inside), which makes fill, centered stroke, and anti-aliasing fall out of the
-//! same per-pixel coverage math. Arrow and dash patterns (spec §9.2) are
+//! same per-pixel coverage math. Dashed/dotted outlines are rendered as discrete
+//! on-segments along the perimeter polyline. The Arrow shape (spec §9.2) is
 //! deferred to a follow-up task.
 
 use super::src_over;
@@ -76,6 +77,30 @@ pub enum Shape {
     },
 }
 
+/// Dash pattern of a shape's outline (spec §9.2 Shapes "Dash pattern").
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DashPattern {
+    /// A continuous stroke.
+    #[default]
+    Solid,
+    /// Dashes (≈3× stroke width on, 2× off).
+    Dashed,
+    /// Dots (≈1× stroke width on, ≈1.5× off).
+    Dotted,
+}
+
+impl DashPattern {
+    /// On/off run lengths in pixels for a given stroke width, or `None` if solid.
+    fn runs(self, stroke_width: f32) -> Option<(f32, f32)> {
+        let w = stroke_width.max(1.0);
+        match self {
+            DashPattern::Solid => None,
+            DashPattern::Dashed => Some(((w * 3.0).max(1.0), (w * 2.0).max(1.0))),
+            DashPattern::Dotted => Some((w.max(1.0), (w * 1.5).max(1.0))),
+        }
+    }
+}
+
 /// Stroke + fill styling for a [`Shape`] (spec §9.2 Shapes "Options").
 #[derive(Debug, Clone, Copy)]
 pub struct ShapeStyle {
@@ -89,6 +114,8 @@ pub struct ShapeStyle {
     pub fill_color: Color,
     /// Anti-alias the edges with a 1px coverage ramp.
     pub anti_alias: bool,
+    /// Outline dash pattern (solid by default).
+    pub dash: DashPattern,
 }
 
 impl Default for ShapeStyle {
@@ -99,6 +126,7 @@ impl Default for ShapeStyle {
             stroke_color: Color::BLACK,
             fill_color: Color::TRANSPARENT,
             anti_alias: true,
+            dash: DashPattern::Solid,
         }
     }
 }
@@ -130,11 +158,25 @@ impl Shapes {
         let cw = doc.canvas.width();
         let ch = doc.canvas.height();
 
-        let half_stroke = (self.style.stroke_width.clamp(1.0, 500.0)) / 2.0;
+        let stroke_width = self.style.stroke_width.clamp(1.0, 500.0);
+        let half_stroke = stroke_width / 2.0;
         let region = self.region(half_stroke, cw, ch)?;
         let selection = doc.selection.as_ref();
 
         let geom = ShapeGeom::build(&self.shape);
+        // A dashed/dotted outline is rendered as discrete on-segments along the
+        // perimeter polyline; a solid outline uses the analytic SDF band.
+        let draws_outline = matches!(
+            self.style.mode,
+            ShapeMode::Outline | ShapeMode::FillAndOutline
+        );
+        let dash_segments = match (draws_outline, self.style.dash.runs(stroke_width)) {
+            (true, Some((on, off))) => {
+                let (verts, closed) = self.shape.outline_polyline();
+                Some(dash_segments(&verts, closed, on, off))
+            }
+            _ => None,
+        };
         let mut after = layer.pixels.copy_region(region).ok()?;
 
         for ly in 0..region.h {
@@ -144,8 +186,14 @@ impl Shapes {
                 let px = cx as f32 + 0.5;
                 let py = cy as f32 + 0.5;
 
-                let (fill_cov, stroke_cov) =
-                    geom.coverage(px, py, half_stroke, self.style.mode, self.style.anti_alias);
+                let (fill_cov, stroke_cov) = geom.coverage(
+                    px,
+                    py,
+                    half_stroke,
+                    self.style.mode,
+                    self.style.anti_alias,
+                    dash_segments.as_deref(),
+                );
                 if fill_cov <= 0.0 && stroke_cov <= 0.0 {
                     continue;
                 }
@@ -220,6 +268,138 @@ impl Shape {
             Shape::Polygon { .. } => "Draw Polygon",
         }
     }
+
+    /// The outline as a polyline `(vertices, closed)` for dash stepping. Curves
+    /// (ellipse, rounded-rectangle corners) are sampled finely enough that the
+    /// dash run lengths stay visually even.
+    fn outline_polyline(&self) -> (Vec<Point>, bool) {
+        match *self {
+            Shape::Line { a, b } => (vec![a, b], false),
+            Shape::Rectangle { a, b } => {
+                let (cx, cy, hx, hy) = center_half(a, b);
+                (
+                    vec![
+                        Point::new(cx - hx, cy - hy),
+                        Point::new(cx + hx, cy - hy),
+                        Point::new(cx + hx, cy + hy),
+                        Point::new(cx - hx, cy + hy),
+                    ],
+                    true,
+                )
+            }
+            Shape::RoundedRectangle { a, b, radius } => {
+                let (cx, cy, hx, hy) = center_half(a, b);
+                let r = radius.clamp(0.0, hx.min(hy));
+                rounded_rect_polyline(cx, cy, hx, hy, r)
+            }
+            Shape::Ellipse { a, b } => {
+                let (cx, cy, hx, hy) = center_half(a, b);
+                let steps = ((hx + hy) as usize).clamp(24, 256);
+                let verts = (0..steps)
+                    .map(|i| {
+                        let t = std::f32::consts::TAU * i as f32 / steps as f32;
+                        Point::new(cx + hx * t.cos(), cy + hy * t.sin())
+                    })
+                    .collect();
+                (verts, true)
+            }
+            Shape::Polygon {
+                center,
+                radius,
+                sides,
+                rotation,
+            } => {
+                let n = sides.clamp(3, 100);
+                let verts = (0..n)
+                    .map(|i| {
+                        let ang = rotation - std::f32::consts::FRAC_PI_2
+                            + std::f32::consts::TAU * i as f32 / n as f32;
+                        Point::new(center.x + radius * ang.cos(), center.y + radius * ang.sin())
+                    })
+                    .collect();
+                (verts, true)
+            }
+        }
+    }
+}
+
+/// Samples a rounded-rectangle outline into a closed polyline.
+fn rounded_rect_polyline(cx: f32, cy: f32, hx: f32, hy: f32, r: f32) -> (Vec<Point>, bool) {
+    if r <= 0.0 {
+        return (
+            vec![
+                Point::new(cx - hx, cy - hy),
+                Point::new(cx + hx, cy - hy),
+                Point::new(cx + hx, cy + hy),
+                Point::new(cx - hx, cy + hy),
+            ],
+            true,
+        );
+    }
+    // Four corner arcs (centered on the inset corners), swept 90° each, in order.
+    let arc_steps = (r as usize).clamp(4, 32);
+    let centers = [
+        (cx + hx - r, cy + hy - r, 0.0_f32), // bottom-right
+        (cx - hx + r, cy + hy - r, std::f32::consts::FRAC_PI_2), // bottom-left
+        (cx - hx + r, cy - hy + r, std::f32::consts::PI), // top-left
+        (cx + hx - r, cy - hy + r, std::f32::consts::PI * 1.5), // top-right
+    ];
+    let mut verts = Vec::new();
+    for (ax, ay, start) in centers {
+        for i in 0..=arc_steps {
+            let t = start + std::f32::consts::FRAC_PI_2 * i as f32 / arc_steps as f32;
+            verts.push(Point::new(ax + r * t.cos(), ay + r * t.sin()));
+        }
+    }
+    (verts, true)
+}
+
+/// Splits an outline polyline into the "on" sub-segments of a dash pattern.
+///
+/// Walks the polyline (wrapping when `closed`) by global arc length, emitting
+/// the painted runs of length `on` separated by gaps of length `off`.
+fn dash_segments(verts: &[Point], closed: bool, on: f32, off: f32) -> Vec<(Point, Point)> {
+    let mut segs = Vec::new();
+    if verts.len() < 2 || on <= 0.0 {
+        return segs;
+    }
+    let period = on + off;
+    let last = if closed { verts.len() } else { verts.len() - 1 };
+    let mut traveled = 0.0_f32;
+    for i in 0..last {
+        let p0 = verts[i];
+        let p1 = verts[(i + 1) % verts.len()];
+        let seg_len = p0.distance(p1);
+        if seg_len <= 0.0 {
+            continue;
+        }
+        let dir = Point::new((p1.x - p0.x) / seg_len, (p1.y - p0.y) / seg_len);
+        let mut t = 0.0_f32;
+        while t < seg_len {
+            let phase = (traveled + t) % period;
+            if phase < on {
+                let end = (t + (on - phase)).min(seg_len);
+                segs.push((
+                    Point::new(p0.x + dir.x * t, p0.y + dir.y * t),
+                    Point::new(p0.x + dir.x * end, p0.y + dir.y * end),
+                ));
+                t = end;
+            } else {
+                t += period - phase;
+            }
+        }
+        traveled += seg_len;
+    }
+    segs
+}
+
+/// Minimum distance from `(px, py)` to any of the segments.
+fn min_dist_segments(px: f32, py: f32, segs: &[(Point, Point)]) -> f32 {
+    let mut best = f32::MAX;
+    for &(a, b) in segs {
+        best = best.min(dist_segment(px, py, a, b));
+    }
+    best
 }
 
 /// Precomputed shape geometry used to evaluate per-pixel coverage.
@@ -293,7 +473,9 @@ impl ShapeGeom {
     }
 
     /// Returns `(fill_coverage, stroke_coverage)` in `[0,1]` for the pixel center
-    /// `(px, py)`, honoring the requested `mode` and anti-aliasing.
+    /// `(px, py)`, honoring the requested `mode` and anti-aliasing. When `dash`
+    /// is `Some`, the stroke is the band around those on-segments instead of the
+    /// analytic outline (used for dashed/dotted patterns).
     fn coverage(
         &self,
         px: f32,
@@ -301,7 +483,17 @@ impl ShapeGeom {
         half_stroke: f32,
         mode: ShapeMode,
         aa: bool,
+        dash: Option<&[(Point, Point)]>,
     ) -> (f32, f32) {
+        let draws_outline = matches!(mode, ShapeMode::Outline | ShapeMode::FillAndOutline);
+        // Dashed stroke: band around the nearest on-segment, common to all kinds.
+        if draws_outline {
+            if let Some(segs) = dash {
+                let stroke = band_coverage(min_dist_segments(px, py, segs), half_stroke, aa);
+                let fill = self.fill_coverage(px, py, mode, aa);
+                return (fill, stroke);
+            }
+        }
         match self {
             // A line has no interior: it always strokes, whatever the mode.
             ShapeGeom::Line { a, b } => {
@@ -316,6 +508,18 @@ impl ShapeGeom {
                 let d = sd_polygon(px, py, verts);
                 Self::area_coverage(d, half_stroke, mode, aa)
             }
+        }
+    }
+
+    /// Fill coverage for the area shapes (0 for a line, which has no interior).
+    fn fill_coverage(&self, px: f32, py: f32, mode: ShapeMode, aa: bool) -> f32 {
+        if !matches!(mode, ShapeMode::Fill | ShapeMode::FillAndOutline) {
+            return 0.0;
+        }
+        match self {
+            ShapeGeom::Line { .. } => 0.0,
+            ShapeGeom::Sdf(s) => inside_coverage(s.sdf(px, py), aa),
+            ShapeGeom::Polygon { verts } => inside_coverage(sd_polygon(px, py, verts), aa),
         }
     }
 
@@ -673,6 +877,7 @@ mod tests {
             stroke_color: Color::rgba(0, 0, 255, 255),
             stroke_width: 2.0,
             anti_alias: false,
+            dash: DashPattern::Solid,
         };
         let mut cmd = Shapes::new(shape, style).draw(0, &doc).unwrap();
         cmd.apply(&mut doc).unwrap();
@@ -684,6 +889,119 @@ mod tests {
         assert_eq!(
             doc.layers[0].pixels.get_pixel(8, 20),
             Some(Color::rgba(0, 0, 255, 255))
+        );
+    }
+
+    fn painted(doc: &Document) -> usize {
+        let mut n = 0;
+        for y in 0..doc.canvas.height() {
+            for x in 0..doc.canvas.width() {
+                if doc.layers[0].pixels.get_pixel(x, y).map(|c| c.a) != Some(0) {
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
+    fn dashed_outline(color: Color, width: f32, dash: DashPattern) -> ShapeStyle {
+        ShapeStyle {
+            mode: ShapeMode::Outline,
+            stroke_color: color,
+            stroke_width: width,
+            anti_alias: false,
+            dash,
+            ..ShapeStyle::default()
+        }
+    }
+
+    #[test]
+    fn dashed_outline_paints_fewer_pixels_than_solid() {
+        let shape = Shape::Rectangle {
+            a: Point::new(10.0, 10.0),
+            b: Point::new(90.0, 90.0),
+        };
+
+        let mut solid_doc = Document::new(100, 100).unwrap();
+        Shapes::new(shape, dashed_outline(Color::BLACK, 3.0, DashPattern::Solid))
+            .draw(0, &solid_doc)
+            .unwrap()
+            .apply(&mut solid_doc)
+            .unwrap();
+
+        let mut dashed_doc = Document::new(100, 100).unwrap();
+        Shapes::new(
+            shape,
+            dashed_outline(Color::BLACK, 3.0, DashPattern::Dashed),
+        )
+        .draw(0, &dashed_doc)
+        .unwrap()
+        .apply(&mut dashed_doc)
+        .unwrap();
+
+        let solid = painted(&solid_doc);
+        let dashed = painted(&dashed_doc);
+        assert!(dashed > 0, "dashed outline must paint something");
+        assert!(
+            dashed < solid,
+            "dashed {dashed} should be sparser than solid {solid}"
+        );
+    }
+
+    #[test]
+    fn dotted_line_leaves_gaps_along_its_path() {
+        // A long horizontal dotted line should leave at least one unpainted gap
+        // between dots along its midline.
+        let mut doc = Document::new(120, 20).unwrap();
+        let shape = Shape::Line {
+            a: Point::new(5.0, 10.0),
+            b: Point::new(115.0, 10.0),
+        };
+        Shapes::new(
+            shape,
+            dashed_outline(Color::BLACK, 2.0, DashPattern::Dotted),
+        )
+        .draw(0, &doc)
+        .unwrap()
+        .apply(&mut doc)
+        .unwrap();
+        let mut painted_cols = 0;
+        let mut gap_cols = 0;
+        for x in 6..114 {
+            if doc.layers[0].pixels.get_pixel(x, 10).map(|c| c.a) != Some(0) {
+                painted_cols += 1;
+            } else {
+                gap_cols += 1;
+            }
+        }
+        assert!(painted_cols > 0, "dots must paint along the line");
+        assert!(gap_cols > 0, "a dotted line must leave gaps");
+    }
+
+    #[test]
+    fn dashed_fill_and_outline_still_fills_interior() {
+        // Dashing only affects the outline; the fill stays solid.
+        let mut doc = Document::new(60, 60).unwrap();
+        let style = ShapeStyle {
+            mode: ShapeMode::FillAndOutline,
+            fill_color: Color::rgba(0, 200, 0, 255),
+            stroke_color: Color::BLACK,
+            stroke_width: 3.0,
+            anti_alias: false,
+            dash: DashPattern::Dashed,
+        };
+        let shape = Shape::Rectangle {
+            a: Point::new(10.0, 10.0),
+            b: Point::new(50.0, 50.0),
+        };
+        Shapes::new(shape, style)
+            .draw(0, &doc)
+            .unwrap()
+            .apply(&mut doc)
+            .unwrap();
+        assert_eq!(
+            doc.layers[0].pixels.get_pixel(30, 30),
+            Some(Color::rgba(0, 200, 0, 255))
         );
     }
 }

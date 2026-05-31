@@ -18,7 +18,7 @@ pub use eraser::{Eraser, EraserMode};
 pub use eyedropper::{Eyedropper, SampleSize};
 pub use fill::{Fill, FillOptions, SampleSource};
 pub use move_tool::Move;
-pub use shapes::{Shape, ShapeMode, ShapeStyle, Shapes};
+pub use shapes::{DashPattern, Shape, ShapeMode, ShapeStyle, Shapes};
 pub use text::{Text, TextAlign, TextStyle};
 
 use crate::color::Color;
