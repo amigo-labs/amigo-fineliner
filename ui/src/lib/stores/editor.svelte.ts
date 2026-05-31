@@ -1,5 +1,5 @@
 // Reactive editor state (Svelte 5 runes). One store per concern (CLAUDE.md §5.4).
-import type { BrushShape, EraserMode, SampleSource } from '../core/wasm';
+import type { BrushShape, EraserMode, LayerInfo, SampleSource } from '../core/wasm';
 
 /** The open document and its derived state. `handle` is the Rust-side index. */
 export const editor = $state({
@@ -9,7 +9,9 @@ export const editor = $state({
   activeLayer: 0,
   canUndo: false,
   canRedo: false,
-  /** Bumped after every mutation so the canvas knows to recomposite. */
+  /** Layers ordered bottom (index 0) to top, mirrored from the core. */
+  layers: [] as LayerInfo[],
+  /** Bumped after every mutation so the canvas and thumbnails refresh. */
   revision: 0,
 });
 

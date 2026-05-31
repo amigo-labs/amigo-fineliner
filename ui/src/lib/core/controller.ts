@@ -7,6 +7,8 @@ import {
   type EraserStrokeCommand,
   type FillBucketCommand,
   type TranslateLayerCommand,
+  type LayerCommand,
+  type BlendMode,
   type Rgba,
 } from './wasm';
 import { editor, tool } from '../stores/editor.svelte';
@@ -47,7 +49,97 @@ function syncInfo(): void {
   editor.activeLayer = info.active_layer;
   editor.canUndo = info.can_undo;
   editor.canRedo = info.can_redo;
+  editor.layers = info.layers;
   editor.revision += 1;
+}
+
+/** Applies a layer command, then refreshes derived state. */
+function applyLayer(cmd: LayerCommand): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Adds a transparent layer above the active layer. */
+export function addLayer(): void {
+  applyLayer({ type: 'add_layer', active: editor.activeLayer });
+}
+
+/** Deletes the layer at `index` (blocked by the core if it is the last layer). */
+export function deleteLayer(index: number): void {
+  applyLayer({ type: 'remove_layer', index });
+}
+
+/** Duplicates the layer at `index`. */
+export function duplicateLayer(index: number): void {
+  applyLayer({ type: 'duplicate_layer', index });
+}
+
+/** Reorders the layer at `from` to position `to`. */
+export function reorderLayer(from: number, to: number): void {
+  if (from !== to) {
+    applyLayer({ type: 'move_layer', from, to });
+  }
+}
+
+/** Renames the layer at `index`. */
+export function renameLayer(index: number, name: string): void {
+  applyLayer({ type: 'rename_layer', index, name });
+}
+
+/** Sets the opacity (0–100 %) of the layer at `index`. */
+export function setLayerOpacity(index: number, percent: number): void {
+  const opacity = Math.min(1, Math.max(0, percent / 100));
+  applyLayer({ type: 'set_layer_opacity', index, opacity });
+}
+
+/** Sets the blend mode of the layer at `index`. */
+export function setLayerBlendMode(index: number, mode: BlendMode): void {
+  applyLayer({ type: 'set_layer_blend_mode', index, mode });
+}
+
+/** Shows or hides the layer at `index`. */
+export function setLayerVisible(index: number, visible: boolean): void {
+  applyLayer({ type: 'set_layer_visible', index, visible });
+}
+
+/** Locks or unlocks pixel edits on the layer at `index`. */
+export function setLayerLocked(index: number, locked: boolean): void {
+  applyLayer({ type: 'set_layer_locked', index, locked });
+}
+
+/** Merges the layer at `index` onto the layer below it. */
+export function mergeDown(index: number): void {
+  applyLayer({ type: 'merge_down', index });
+}
+
+/** Flattens all visible layers into one. */
+export function mergeVisible(): void {
+  applyLayer({ type: 'merge_visible' });
+}
+
+/** Flattens every layer onto an opaque white background. */
+export function flattenImage(): void {
+  applyLayer({ type: 'flatten_image' });
+}
+
+/** Selects the active layer (UI state; not an undoable command). */
+export function selectLayer(index: number): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.setActiveLayer(editor.handle, index);
+  syncInfo();
+}
+
+/** Returns a 32×32 RGBA8 thumbnail for the layer with `layerId`, or null. */
+export function layerThumbnail(layerId: string): Uint8ClampedArray | null {
+  if (editor.handle === null) {
+    return null;
+  }
+  return core.layerThumbnail(editor.handle, layerId);
 }
 
 /** Creates a blank document and makes it the active one. */

@@ -12,6 +12,7 @@
   import ToolBar from './lib/components/toolbar/ToolBar.svelte';
   import ToolOptions from './lib/components/toolbar/ToolOptions.svelte';
   import ColorsPanel from './lib/components/panels/ColorsPanel.svelte';
+  import LayersPanel from './lib/components/panels/LayersPanel.svelte';
 
   let fileInput: HTMLInputElement;
   let loadError = $state<string | null>(null);
@@ -130,8 +131,9 @@
       </footer>
     </div>
 
-    <aside class="w-56 border-l border-[var(--fl-panel-border)] bg-[var(--fl-app-bg)]">
+    <aside class="flex w-56 flex-col border-l border-[var(--fl-panel-border)] bg-[var(--fl-app-bg)]">
       <ColorsPanel />
+      <LayersPanel />
     </aside>
   </div>
 </div>
