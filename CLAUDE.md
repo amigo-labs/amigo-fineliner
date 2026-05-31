@@ -657,7 +657,9 @@ ADR-008: WASM layer API for M7 — 2026-05
             a 32×32 RGBA8 Uint8ClampedArray. apply_command's SerializedCommand
             gains DuplicateLayer, RenameLayer, SetLayerOpacity,
             SetLayerBlendMode, SetLayerVisible, SetLayerLocked, MergeDown,
-            MergeVisible, FlattenImage.
+            MergeVisible, FlattenImage. Adds set_active_layer(handle, index) as
+            a non-undoable selection setter (layer selection is UI state, not a
+            command per spec §7.3).
   Rationale: The layers panel (spec §16.5) needs per-layer state and thumbnails
             (spec §5.3). get_layer_thumbnail is already named in the spec §17
             API surface; the layer fields extend DocumentInfo rather than adding

@@ -6,8 +6,8 @@
 
 use fineliner_core::codec::{to_jpeg_bytes, to_png_bytes, to_webp_bytes};
 use fineliner_core::command::{
-    AddLayer, CommandBus, DuplicateLayer, FlattenImage, MergeDown, MergeVisible, RemoveLayer,
-    RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
+    AddLayer, CommandBus, DuplicateLayer, FlattenImage, MergeDown, MergeVisible, MoveLayer,
+    RemoveLayer, RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
 };
 use fineliner_core::{
     compose, BlendMode, Brush, BrushShape, Color, Document, Eraser, EraserMode, Eyedropper, Fill,
@@ -267,6 +267,8 @@ enum CommandSpec {
     AddLayer { active: usize },
     /// Remove the layer at `index`.
     RemoveLayer { index: usize },
+    /// Reorder the layer at `from` to position `to`.
+    MoveLayer { from: usize, to: usize },
     /// Duplicate the layer at `index`, inserting the copy above it.
     DuplicateLayer { index: usize },
     /// Rename the layer at `index`.
@@ -380,6 +382,9 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
         CommandSpec::RemoveLayer { index } => {
             bus.apply(Box::new(RemoveLayer::at(index))).map_err(to_js)
         }
+        CommandSpec::MoveLayer { from, to } => {
+            bus.apply(Box::new(MoveLayer::new(from, to))).map_err(to_js)
+        }
         CommandSpec::DuplicateLayer { index } => bus
             .apply(Box::new(DuplicateLayer::at(index)))
             .map_err(to_js),
@@ -429,6 +434,15 @@ pub fn pick_color(
             Some(c) => Ok(vec![c.r, c.g, c.b, c.a]),
             None => Ok(Vec::new()),
         }
+    })
+}
+
+/// Selects the active layer by `index`. Layer selection is UI state, not an
+/// undoable edit, so this is a setter rather than a command (spec §5, §7.3).
+#[wasm_bindgen]
+pub fn set_active_layer(handle: u32, index: usize) -> Result<(), JsError> {
+    with_bus(handle, |bus| {
+        bus.document.set_active_layer(index).map_err(to_js)
     })
 }
 
