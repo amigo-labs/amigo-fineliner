@@ -115,30 +115,39 @@ Milestone is XL; split into M tasks (core test-first, then WASM, then UI):
   `SelectionMask::polygon` (even-odd scanline) for Lasso / Polygonal Lasso;
   `expand` / `contract` (separable square dilation/erosion) and `feather`
   (triple box blur). 13 tests incl. wand contiguous vs global. Spec §8.4, §9.3.
-- [ ] **8C — SetSelection command + mask constraint** (core): `SetSelection`
-  (before/after `Option<SelectionMask>`), and apply the active mask as a
-  per-pixel coverage multiplier in the brush rasterizer and Fill. Spec §7.3.
+- [x] **8C — SetSelection command + mask constraint** (core): `SetSelection`
+  (lazy `before` capture, `replace`/`clear` + `with_label`); the brush
+  rasterizer (`StrokeCtx`) and Fill now scale each written pixel by the active
+  mask's coverage (None = fully selected). 6 tests (round-trip, stroke outside /
+  straddling selection, fill within selection). Spec §7.3.
 - [ ] **8D — WASM bindings**: selection commands (rect/ellipse/lasso/wand draws
   carrying mode), Select All / Deselect / Invert / Expand / Contract / Feather,
   and a selection-outline query for marching ants. Decision Log entry.
 - [ ] **8E — UI**: selection tools (M/L/W) pointer handling, mode modifiers
   (Shift/Alt), and the marching-ants overlay (CSS animation, spec §8.5).
 
-### Verification (8A + 8B)
+### Verification (8A–8C)
 
-- `cargo test --workspace` green (143 core tests); `cargo clippy -p
-  fineliner-core --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+- `cargo test --workspace` green (149 core tests); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
 
-## Next concrete task — M8 8C (SetSelection + mask constraint)
+The selection system is now fully functional at the core level: masks can be
+built (rect/ellipse/polygon/wand), modified (combine modes, invert, expand,
+contract, feather), stored undoably (`SetSelection`), and they constrain brush
+and fill writes. Selection is not yet exposed to JS or driven from the UI.
 
-Add a `SetSelection` command storing `before`/`after` `Option<SelectionMask>`
-(undoable; spec §7.3) and the Select All / Deselect / Invert / Expand /
-Contract / Feather operations that emit it. Then make the active selection
-constrain edits: multiply each written pixel's coverage by the mask in the
-brush rasterizer (`tools/brush.rs`) and in Fill (`tools/fill.rs`) — when
-`doc.selection` is `None`, everything is selected (no change). Tests: a stroke
-outside the selection writes nothing; a stroke straddling the edge writes only
-the selected side; feathered edges blend partially.
+## Next concrete task — M8 8D (WASM bindings)
+
+Extend `apply_command`'s `CommandSpec` with selection draws that build a mask in
+Rust and combine it with the current selection via `apply_mode`:
+`SelectRectangle`/`SelectEllipse` (x, y, w, h, mode, feather), `SelectPolygon`
+(points, mode), `SelectWand` (x, y, tolerance, contiguous, sample, mode). Add
+the modifier commands `SelectAll`, `Deselect`, `InvertSelection`,
+`ExpandSelection`/`ContractSelection`/`FeatherSelection` (radius) — each reads
+`bus.document.selection`, computes the new mask, and applies a `SetSelection`
+(label it). Add a `get_selection_bounds` (or mask-export) query for the
+marching-ants overlay. Decision Log entry for the new API. Then 8E wires the M/
+L/W tools, mode modifiers (Shift/Alt), and the CSS marching-ants overlay (§8.5).
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
