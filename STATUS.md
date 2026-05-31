@@ -224,15 +224,46 @@ the WASM bindings and UI remain (plus optional interactive Free Transform).
   cover the M9 exit criteria; the affine math + handle UI is a follow-up.
 - Arbitrary-angle canvas rotation (spec §10.3) is deferred with Free Transform.
 
-## Next concrete task — M10 (shapes + text)
+## M10 — shapes + text (in progress)
 
-Shapes: Line, Rectangle, Rounded Rectangle, Ellipse, Polygon (N-sided) with
-Outline / Fill / Fill+Outline modes, stroke width + dash; Text tool (font,
-size, bold/italic, color, anti-alias) rasterized on commit (ADR-003). Spec §11 /
-M10. Start with a core `shapes` rasterizer (test-first: outline pixel coverage,
-fill coverage) emitting `SetPixels`; text rasterization needs a font approach —
-check the spec for the chosen font stack before adding a dependency (stop-and-
-ask if a new font crate is required, per CLAUDE.md §9 / §12).
+Milestone is XL; split into core → WASM → UI tasks, with text gated on a font
+dependency decision (stop-and-ask, CLAUDE.md §9 / §12).
+
+- [x] **10A — shapes rasterizer** (core, `tools/shapes.rs`): `Shape` (Line,
+  Rectangle, RoundedRectangle, Ellipse, regular Polygon), `ShapeMode`
+  (Outline/Fill/FillAndOutline), `ShapeStyle` (stroke width/color, fill color,
+  anti-alias) and `Shapes::draw` → one `SetPixels`. SDF-based per-pixel coverage
+  unifies fill, centered stroke and AA; the active selection mask is honored
+  (matches brush/fill). 10 tests (fill/outline/AA-off coverage, off-canvas,
+  undo, selection, fill+outline). Spec §9.2 Shapes.
+- [x] **10B — WASM binding** (`apply_command` `DrawShape`): `shape` discriminator
+  + geometry (`points`/`center`/`radius`/`sides`/`rotation`/`corner_radius`),
+  `mode` (snake_case), stroke width/color, fill color, `anti_alias`. Builds the
+  core `Shape` and emits `SetPixels`; invalid geometry / off-canvas is a no-op.
+- [ ] **10C — Shapes tool UI**: toolbar button + `U` shortcut (cycle shapes),
+  pointer drag (rubber-band rect/ellipse/line/polygon with Shift constrain),
+  options bar (mode, stroke width/color, fill color, sides, corner radius, AA),
+  live preview on `CanvasOverlay`, commit `DrawShape` on pointer up.
+- [ ] **10D — Text tool** (`T`): rasterized on commit (ADR-003). **Blocked /
+  stop-and-ask** — needs a pure-Rust font stack (e.g. `ab_glyph` / `fontdue`),
+  a new dependency requiring a Decision Log entry. Spec §9.2 Text.
+- [ ] **Follow-up — dash patterns + Arrow shape** (spec §9.2): solid is
+  implemented; dashed/dotted and the Arrow shape are deferred.
+
+### Verification (10A–10B)
+
+- `cargo test --workspace` green (184 core tests, incl. 10 shapes);
+  `cargo clippy --workspace --all-targets -- -D warnings` clean;
+  `cargo fmt --check` clean.
+- `cargo build -p fineliner-wasm --target wasm32-unknown-unknown --release`
+  succeeds (DrawShape compiles for wasm).
+
+## Next concrete task — M10 task 10C (Shapes tool UI)
+
+Wire the Shapes tool into the Svelte UI: toolbar button + `U` shortcut, a
+pointer-drag gesture with a live overlay preview, an options bar, and the
+`DrawShape` command on commit. Then **stop and ask** before 10D (Text) about the
+font dependency (pure-Rust crate choice + Decision Log entry).
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
