@@ -174,33 +174,42 @@ Milestone is XL; split into M tasks (core test-first, then commands, then UI):
   `RotateCanvas` (Cw90/Ccw90/Rotate180, all layers; 90° swaps canvas dims;
   selection cleared and restored on undo). All lossless → invertible by
   re-application, no snapshot. 5 tests.
-- [ ] **9C — scale / crop / resize-anchor / layer 90°** (core): `ScaleImage`
-  (all layers via `transform::scale`, resizes canvas; snapshot undo),
-  `CropToSelection` (canvas ← selection bbox, layers cropped; snapshot undo),
-  `ResizeCanvas` 9-grid anchor padding (extend the M2 `ResizeCanvas`), and
-  layer 90° rotation (rotate + center-fit into canvas dims, since a layer must
-  stay canvas-sized). These are lossy/structural so they snapshot for undo.
-- [ ] **9D — Free Transform math** (core): compose translate/scale/rotate into an
-  affine applied to a layer with chosen interpolation (spec §10.1).
+- [x] **9C — scale / crop / resize-anchor / layer 90°** (core): `ResizeCanvas`
+  gained a 9-grid `Anchor` (default TopLeft); `ScaleImage` (all layers via
+  `transform::scale`, resizes canvas, snapshot undo); `CropToSelection` (canvas
+  ← selection bbox, layers cropped, snapshot undo, ADR-010 clips outside pixels);
+  `RotateLayer90` (rotate + center-fit into canvas dims, snapshot undo). 9 tests.
+- [ ] **9D — Free Transform math** (core, optional for Phase 1): compose
+  translate/scale/rotate into one affine applied to a layer with chosen
+  interpolation (spec §10.1 interactive). Can be deferred — the discrete
+  transforms + scale cover the M9 exit criteria; Free Transform is the
+  interactive handle UI's backing math.
 - [ ] **9E — WASM bindings**: flip/rotate/scale-image/resize-canvas/crop commands
   + the resize/scale dialog parameters. Decision Log entry.
 - [ ] **9F — UI**: Image/Layer menus (flip, rotate 90/180), Resize Canvas and
   Scale Image dialogs (9-grid anchor, interpolation), Free Transform handles
   (Ctrl+T) and Crop to selection. Spec §10, §16.
 
-### Verification (9A + 9B)
+### Verification (9A–9C)
 
-- `cargo test --workspace` green (168 core tests); `cargo clippy --workspace
+- `cargo test --workspace` green (174 core tests); `cargo clippy --workspace
   --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
 
-## Next concrete task — M9 9C (scale / crop / resize-anchor / layer 90°)
+The transform core is complete enough for the M9 exit criteria: flips, rotate
+90/180 (layer + canvas), scale image (nearest/bilinear/bicubic), resize canvas
+(9-grid anchor), and crop to selection are all implemented and undoable. Only
+the WASM bindings and UI remain (plus optional interactive Free Transform).
 
-See the 9C bullet above. Snapshot-based undo (clone prior layers + canvas size),
-mirroring `command/merge.rs`. For `CropToSelection`, our layers are always
-canvas-sized, so cropping clips pixels outside the new canvas — note this
-diverges from spec §10.6's "pixels outside are not clipped" (which assumes
-larger-than-canvas layers); record a Decision Log entry if kept. Check the
-existing M2 `command/resize.rs` `ResizeCanvas` before adding anchor support.
+## Next concrete task — M9 9E (WASM bindings)
+
+Extend `apply_command`'s `CommandSpec` with: `TransformLayer` (flip_h/flip_v/
+rotate_180), `RotateLayer90` (ccw flag), `FlipCanvas` (horizontal), `RotateCanvas`
+(cw90/ccw90/rotate_180), `ScaleImage` (width/height/interpolation), `ResizeCanvas`
+(width/height/anchor — note core `ResizeCanvas` already exists but isn't yet in
+the WASM `CommandSpec`), and `CropToSelection`. Interpolation and anchor cross
+the boundary as snake_case strings (reuse the convention). Decision Log entry.
+Then 9F: Image/Layer menus, Resize/Scale dialogs (9-grid anchor picker,
+interpolation dropdown), Rotate/Flip menu items, Crop to selection.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
