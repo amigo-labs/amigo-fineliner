@@ -8,6 +8,8 @@ import {
   type FillBucketCommand,
   type TranslateLayerCommand,
   type LayerCommand,
+  type SelectionCommand,
+  type SelectionMode,
   type BlendMode,
   type Rgba,
 } from './wasm';
@@ -50,6 +52,7 @@ function syncInfo(): void {
   editor.canUndo = info.can_undo;
   editor.canRedo = info.can_redo;
   editor.layers = info.layers;
+  editor.hasSelection = info.has_selection;
   editor.revision += 1;
 }
 
@@ -140,6 +143,95 @@ export function layerThumbnail(layerId: string): Uint8ClampedArray | null {
     return null;
   }
   return core.layerThumbnail(editor.handle, layerId);
+}
+
+/** Applies a selection command, then refreshes derived state. */
+function applySelection(cmd: SelectionCommand): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Selects a rectangle (canvas space) combined per `mode`. */
+export function selectRectangle(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  mode: SelectionMode,
+): void {
+  applySelection({ type: 'select_rectangle', x, y, w, h, mode, feather: tool.selectionFeather });
+}
+
+/** Selects an ellipse inscribed in the rectangle (canvas space), per `mode`. */
+export function selectEllipse(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  mode: SelectionMode,
+): void {
+  applySelection({ type: 'select_ellipse', x, y, w, h, mode, feather: tool.selectionFeather });
+}
+
+/** Selects a polygon over the given canvas-space points, per `mode`. */
+export function selectPolygon(points: Array<[number, number]>, mode: SelectionMode): void {
+  applySelection({ type: 'select_polygon', points, mode, feather: tool.selectionFeather });
+}
+
+/** Magic-wand selection seeded at the given canvas-space point, per `mode`. */
+export function selectWand(x: number, y: number, mode: SelectionMode): void {
+  applySelection({
+    type: 'select_wand',
+    layer: editor.activeLayer,
+    x,
+    y,
+    tolerance: tool.tolerance,
+    contiguous: tool.contiguous,
+    sample: tool.wandSample,
+    mode,
+  });
+}
+
+/** Selects the whole canvas (Ctrl+A). */
+export function selectAll(): void {
+  applySelection({ type: 'select_all' });
+}
+
+/** Clears the selection (Ctrl+D). */
+export function deselect(): void {
+  applySelection({ type: 'deselect' });
+}
+
+/** Inverts the selection (Ctrl+Shift+I). */
+export function invertSelection(): void {
+  applySelection({ type: 'invert_selection' });
+}
+
+/** Grows the selection by `radius` pixels. */
+export function expandSelection(radius: number): void {
+  applySelection({ type: 'expand_selection', radius });
+}
+
+/** Shrinks the selection by `radius` pixels. */
+export function contractSelection(radius: number): void {
+  applySelection({ type: 'contract_selection', radius });
+}
+
+/** Softens the selection edges by `radius` pixels. */
+export function featherSelection(radius: number): void {
+  applySelection({ type: 'feather_selection', radius });
+}
+
+/** The active selection's coverage mask (canvas-sized), or null if none. */
+export function selectionMask(): Uint8ClampedArray | null {
+  if (editor.handle === null) {
+    return null;
+  }
+  const mask = core.selectionMask(editor.handle);
+  return mask.length > 0 ? mask : null;
 }
 
 /** Creates a blank document and makes it the active one. */

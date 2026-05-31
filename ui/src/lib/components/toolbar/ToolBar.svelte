@@ -11,6 +11,11 @@
   }
 
   const tools: ToolDef[] = [
+    { kind: 'rect_select', icon: '▭', label: 'Rectangle Select', key: 'M' },
+    { kind: 'ellipse_select', icon: '◯', label: 'Ellipse Select', key: 'M' },
+    { kind: 'lasso', icon: '🪢', label: 'Lasso', key: 'L' },
+    { kind: 'polygon_lasso', icon: '⬠', label: 'Polygonal Lasso', key: 'L' },
+    { kind: 'magic_wand', icon: '🪄', label: 'Magic Wand', key: 'W' },
     { kind: 'pencil', icon: '✏️', label: 'Pencil', key: 'B' },
     { kind: 'eraser', icon: '🩹', label: 'Eraser', key: 'E' },
     { kind: 'fill', icon: '🪣', label: 'Fill', key: 'G' },

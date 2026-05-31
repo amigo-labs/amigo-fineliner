@@ -16,6 +16,8 @@ import initWasm, {
   export_jpeg,
   export_webp,
   get_document_info,
+  get_selection_bounds,
+  get_selection_mask,
 } from '../wasm/pkg/fineliner_wasm.js';
 
 /** Per-layer state for the layers panel (spec §16.5). */
@@ -35,6 +37,8 @@ export interface DocumentInfo {
   active_layer: number;
   can_undo: boolean;
   can_redo: boolean;
+  /** Whether a selection is currently active. */
+  has_selection: boolean;
   /** Layers ordered bottom (index 0) to top, matching core storage order. */
   layers: LayerInfo[];
 }
@@ -121,13 +125,39 @@ export type LayerCommand =
   | { type: 'merge_visible' }
   | { type: 'flatten_image' };
 
+/** How a drawn selection combines with the existing one (spec §8.2). */
+export type SelectionMode = 'replace' | 'add' | 'subtract' | 'intersect';
+
+/** Selection draws and modifiers (spec §8.3, §8.4 / §9.3). */
+export type SelectionCommand =
+  | { type: 'select_rectangle'; x: number; y: number; w: number; h: number; mode: SelectionMode; feather: number }
+  | { type: 'select_ellipse'; x: number; y: number; w: number; h: number; mode: SelectionMode; feather: number }
+  | { type: 'select_polygon'; points: Array<[number, number]>; mode: SelectionMode; feather: number }
+  | {
+      type: 'select_wand';
+      layer: number;
+      x: number;
+      y: number;
+      tolerance: number;
+      contiguous: boolean;
+      sample: SampleSource;
+      mode: SelectionMode;
+    }
+  | { type: 'select_all' }
+  | { type: 'deselect' }
+  | { type: 'invert_selection' }
+  | { type: 'expand_selection'; radius: number }
+  | { type: 'contract_selection'; radius: number }
+  | { type: 'feather_selection'; radius: number };
+
 /** Any command emitted to the core. */
 export type ToolCommand =
   | PencilStrokeCommand
   | EraserStrokeCommand
   | FillBucketCommand
   | TranslateLayerCommand
-  | LayerCommand;
+  | LayerCommand
+  | SelectionCommand;
 
 let initialized: Promise<unknown> | null = null;
 
@@ -151,6 +181,10 @@ export const core = {
     pick_color(handle, x, y, sample, size),
   /** Selects the active layer (UI state, not undoable). */
   setActiveLayer: (handle: number, index: number): void => set_active_layer(handle, index),
+  /** Selection bounding box as [x, y, w, h], or an empty array if none. */
+  selectionBounds: (handle: number): number[] => Array.from(get_selection_bounds(handle)),
+  /** Selection coverage bytes (canvas-sized, row-major), or empty if none. */
+  selectionMask: (handle: number): Uint8ClampedArray => get_selection_mask(handle),
   /** Returns a 32×32 RGBA8 thumbnail of the layer with the given id. */
   layerThumbnail: (handle: number, layerId: string): Uint8ClampedArray =>
     get_layer_thumbnail(handle, layerId),
