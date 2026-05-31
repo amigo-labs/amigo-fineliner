@@ -168,36 +168,39 @@ Milestone is XL; split into M tasks (core test-first, then commands, then UI):
   permutations), `Interpolation` (Nearest/Bilinear/Bicubic), and `scale` (per-
   channel f32 sampling, Catmull-Rom bicubic). 12 tests (rotate 90×4 = identity,
   flip twice = identity, scale ×2→×0.5 bicubic ≈ identity, nearest exact).
-- [ ] **9B — layer/canvas transform commands** (core): `TransformLayer` (apply a
-  flip/rotate/scale to the active layer's buffer, undoable) and the canvas ops
-  `FlipCanvas`/`RotateCanvas` (all layers) + `ScaleImage` (all layers, resizes
-  canvas) + `ResizeCanvas` anchor padding + `CropToSelection`. Mind the
-  canvas-sized-layer invariant: 90° rotation/scale changes dims, so these are
-  canvas-level (resize canvas + transform every layer together) except a layer
-  flip/180 which keeps dims. Tests: round-trips, all-layers consistency.
-- [ ] **9C — Free Transform math** (core): compose translate/scale/rotate into an
-  affine applied to a layer with chosen interpolation (the interactive
-  `TransformLayer` from spec §10.1). May fold into 9B if small.
-- [ ] **9D — WASM bindings**: flip/rotate/scale-image/resize-canvas/crop commands
+- [x] **9B — discrete flip/rotate commands** (core, `command/transform.rs`):
+  `TransformLayer` (active-layer FlipHorizontal/FlipVertical/Rotate180,
+  dimension-preserving, self-inverse) and the canvas ops `FlipCanvas` +
+  `RotateCanvas` (Cw90/Ccw90/Rotate180, all layers; 90° swaps canvas dims;
+  selection cleared and restored on undo). All lossless → invertible by
+  re-application, no snapshot. 5 tests.
+- [ ] **9C — scale / crop / resize-anchor / layer 90°** (core): `ScaleImage`
+  (all layers via `transform::scale`, resizes canvas; snapshot undo),
+  `CropToSelection` (canvas ← selection bbox, layers cropped; snapshot undo),
+  `ResizeCanvas` 9-grid anchor padding (extend the M2 `ResizeCanvas`), and
+  layer 90° rotation (rotate + center-fit into canvas dims, since a layer must
+  stay canvas-sized). These are lossy/structural so they snapshot for undo.
+- [ ] **9D — Free Transform math** (core): compose translate/scale/rotate into an
+  affine applied to a layer with chosen interpolation (spec §10.1).
+- [ ] **9E — WASM bindings**: flip/rotate/scale-image/resize-canvas/crop commands
   + the resize/scale dialog parameters. Decision Log entry.
-- [ ] **9E — UI**: Image/Layer menus (flip, rotate 90/180), Resize Canvas and
+- [ ] **9F — UI**: Image/Layer menus (flip, rotate 90/180), Resize Canvas and
   Scale Image dialogs (9-grid anchor, interpolation), Free Transform handles
   (Ctrl+T) and Crop to selection. Spec §10, §16.
 
-### Verification (9A)
+### Verification (9A + 9B)
 
-- `cargo test --workspace` green (163 core tests); `cargo clippy --workspace
+- `cargo test --workspace` green (168 core tests); `cargo clippy --workspace
   --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
 
-## Next concrete task — M9 9B (layer/canvas transform commands)
+## Next concrete task — M9 9C (scale / crop / resize-anchor / layer 90°)
 
-See the 9B bullet above. Key design point: a layer's `pixels` must stay
-canvas-sized, so 90° rotation and scaling are canvas-level operations (resize
-the canvas and transform every layer in lockstep); only flips and 180° rotation
-preserve dimensions and can be a pure per-layer `TransformLayer`. Decide the
-`TransformLayer` shape (enum of flip/rotate kinds vs. a general affine) — the
-spec emits `TransformLayer` for flips/rotations (§10.2/§10.3) and Free Transform
-(§10.1), so a kind-enum now with an affine variant later is reasonable.
+See the 9C bullet above. Snapshot-based undo (clone prior layers + canvas size),
+mirroring `command/merge.rs`. For `CropToSelection`, our layers are always
+canvas-sized, so cropping clips pixels outside the new canvas — note this
+diverges from spec §10.6's "pixels outside are not clipped" (which assumes
+larger-than-canvas layers); record a Decision Log entry if kept. Check the
+existing M2 `command/resize.rs` `ResizeCanvas` before adding anchor support.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
