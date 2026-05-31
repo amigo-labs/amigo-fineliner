@@ -99,6 +99,32 @@ impl SelectionMask {
         self.data.iter().all(|&v| v == 0)
     }
 
+    /// Tight bounding box of the selected (non-zero) pixels, or `None` when the
+    /// selection is empty. Used to position the marching-ants overlay (spec §8.5).
+    pub fn bounding_box(&self) -> Option<Rect> {
+        let (mut min_x, mut min_y, mut max_x, mut max_y) = (self.width, self.height, 0u32, 0u32);
+        let mut any = false;
+        for y in 0..self.height {
+            for x in 0..self.width {
+                if self.coverage(x, y) > 0 {
+                    any = true;
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x);
+                    max_y = max_y.max(y);
+                }
+            }
+        }
+        any.then(|| {
+            Rect::new(
+                min_x as i32,
+                min_y as i32,
+                max_x - min_x + 1,
+                max_y - min_y + 1,
+            )
+        })
+    }
+
     /// Inverts coverage in place: `255 - x` for every pixel (spec §8.4 Invert).
     pub fn invert(&mut self) {
         for v in &mut self.data {
@@ -346,6 +372,18 @@ mod tests {
         let rect = SelectionMask::rectangle(10, 10, Rect::new(0, 0, 4, 4));
         let result = apply_mode(None, rect, SelectionMode::Subtract);
         assert_eq!(result.selected_count(), 100 - 16);
+    }
+
+    #[test]
+    fn bounding_box_is_tight_around_selection() {
+        let m = SelectionMask::rectangle(20, 20, Rect::new(3, 5, 4, 6));
+        let bb = m.bounding_box().unwrap();
+        assert_eq!((bb.x, bb.y, bb.w, bb.h), (3, 5, 4, 6));
+    }
+
+    #[test]
+    fn bounding_box_of_empty_is_none() {
+        assert!(SelectionMask::new_empty(8, 8).bounding_box().is_none());
     }
 
     #[test]
