@@ -11,9 +11,10 @@ import {
   selectEllipse,
   selectPolygon,
   selectWand,
+  drawShape,
 } from '../core/controller';
-import { tool, selectionPreview, type ToolKind } from '../stores/editor.svelte';
-import type { SelectionMode } from '../core/wasm';
+import { tool, selectionPreview, shapePreview, type ToolKind } from '../stores/editor.svelte';
+import type { SelectionMode, ShapeKind } from '../core/wasm';
 
 /** Converts a pointer event into canvas-pixel coordinates. */
 function toCanvasPoint(canvas: HTMLCanvasElement, e: PointerEvent): [number, number] {
@@ -53,6 +54,30 @@ function rectFromCorners(
 }
 
 /**
+ * Applies the Shapes-tool Shift constraint to the drag endpoint (spec §9.2):
+ * a square box for area shapes, a 45°-snapped segment for a line.
+ */
+function constrainShape(
+  a: [number, number],
+  p: [number, number],
+  kind: ShapeKind,
+  shift: boolean,
+): [number, number] {
+  if (!shift) {
+    return p;
+  }
+  const dx = p[0] - a[0];
+  const dy = p[1] - a[1];
+  if (kind === 'line') {
+    const angle = (Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * Math.PI) / 4;
+    const len = Math.hypot(dx, dy);
+    return [a[0] + Math.cos(angle) * len, a[1] + Math.sin(angle) * len];
+  }
+  const side = Math.max(Math.abs(dx), Math.abs(dy));
+  return [a[0] + Math.sign(dx || 1) * side, a[1] + Math.sign(dy || 1) * side];
+}
+
+/**
  * Attaches the active tool's pointer behavior to a canvas. Returns a teardown.
  *
  * Paint tools draw incrementally over a drag (one undo step per drag). Fill and
@@ -61,7 +86,11 @@ function rectFromCorners(
  * region (magic wand); Shift/Alt set the combine mode. A redraw callback runs
  * after each mutation so the canvas stays live.
  */
-export function attachTools(canvas: HTMLCanvasElement, redraw: () => void): () => void {
+export function attachTools(
+  canvas: HTMLCanvasElement,
+  redraw: () => void,
+  onPlaceText?: (cx: number, cy: number, e: PointerEvent) => void,
+): () => void {
   let active = false;
   let last: [number, number] | null = null;
   let start: [number, number] | null = null;
@@ -100,6 +129,21 @@ export function attachTools(canvas: HTMLCanvasElement, redraw: () => void): () =
 
     if (tool.kind === 'magic_wand') {
       selectWand(point[0], point[1], selectionModeOf(e));
+      return;
+    }
+
+    // Text places a cursor for the entry overlay; it has no drag gesture here.
+    if (tool.kind === 'text') {
+      onPlaceText?.(point[0], point[1], e);
+      return;
+    }
+
+    if (tool.kind === 'shapes') {
+      active = true;
+      start = point;
+      last = point;
+      canvas.setPointerCapture(e.pointerId);
+      shapePreview.value = { kind: tool.shapeKind, a: point, b: point, sides: tool.shapeSides };
       return;
     }
 
@@ -190,6 +234,13 @@ export function attachTools(canvas: HTMLCanvasElement, redraw: () => void): () =
       return;
     }
 
+    if (tool.kind === 'shapes' && start) {
+      const b = constrainShape(start, point, tool.shapeKind, e.shiftKey);
+      shapePreview.value = { kind: tool.shapeKind, a: start, b, sides: tool.shapeSides };
+      last = b;
+      return;
+    }
+
     switch (tool.kind) {
       case 'pencil':
         paintStroke([last, point], strokeId, useBackground);
@@ -229,6 +280,10 @@ export function attachTools(canvas: HTMLCanvasElement, redraw: () => void): () =
         }
       }
       selectionPreview.value = null;
+    } else if (tool.kind === 'shapes' && start && last) {
+      drawShape(start, last);
+      redraw();
+      shapePreview.value = null;
     } else if (tool.kind === 'move' && start && last) {
       const dx = Math.round(last[0] - start[0]);
       const dy = Math.round(last[1] - start[1]);

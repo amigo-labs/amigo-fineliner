@@ -4,7 +4,7 @@
   // a separate, non-interactive canvas layered exactly over the main canvas, so
   // the document's pixels are never touched (ADR-001).
   import { onMount } from 'svelte';
-  import { editor, selectionPreview } from '../../stores/editor.svelte';
+  import { editor, selectionPreview, shapePreview } from '../../stores/editor.svelte';
   import { selectionMask } from '../../core/controller';
 
   let canvas: HTMLCanvasElement;
@@ -81,6 +81,45 @@
     return path;
   }
 
+  /** Builds the outline of the in-progress Shapes-tool gesture, if any. */
+  function buildShapePath(): Path2D | null {
+    const sp = shapePreview.value;
+    if (!sp) {
+      return null;
+    }
+    const { a, b, kind } = sp;
+    const x = Math.min(a[0], b[0]);
+    const y = Math.min(a[1], b[1]);
+    const w = Math.abs(b[0] - a[0]);
+    const h = Math.abs(b[1] - a[1]);
+    const path = new Path2D();
+    if (kind === 'line') {
+      path.moveTo(a[0], a[1]);
+      path.lineTo(b[0], b[1]);
+    } else if (kind === 'ellipse') {
+      path.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+    } else if (kind === 'polygon') {
+      const cx = x + w / 2;
+      const cy = y + h / 2;
+      const r = Math.min(w, h) / 2;
+      const n = Math.max(3, sp.sides);
+      for (let i = 0; i < n; i++) {
+        const ang = -Math.PI / 2 + (Math.PI * 2 * i) / n;
+        const px = cx + r * Math.cos(ang);
+        const py = cy + r * Math.sin(ang);
+        if (i === 0) path.moveTo(px, py);
+        else path.lineTo(px, py);
+      }
+      path.closePath();
+    } else if (kind === 'rounded_rectangle') {
+      const r = Math.min(16, w / 2, h / 2);
+      path.roundRect(x, y, w, h, r);
+    } else {
+      path.rect(x, y, w, h);
+    }
+    return path;
+  }
+
   /** Strokes a path as marching ants: solid black under an offset white dash. */
   function marchingAnts(ctx: CanvasRenderingContext2D, path: Path2D): void {
     ctx.lineWidth = 1;
@@ -109,6 +148,10 @@
     const preview = buildPreviewPath();
     if (preview) {
       marchingAnts(ctx, preview);
+    }
+    const shape = buildShapePath();
+    if (shape) {
+      marchingAnts(ctx, shape);
     }
   }
 

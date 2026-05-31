@@ -135,6 +135,93 @@
         <option value="all_layers">All Layers</option>
       </select>
     </label>
+  {:else if tool.kind === 'shapes'}
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Shape</span>
+      <select bind:value={tool.shapeKind} class="rounded bg-neutral-800 px-2 py-1">
+        <option value="line">Line</option>
+        <option value="rectangle">Rectangle</option>
+        <option value="rounded_rectangle">Rounded Rectangle</option>
+        <option value="ellipse">Ellipse</option>
+        <option value="polygon">Polygon</option>
+      </select>
+    </label>
+
+    {#if tool.shapeKind !== 'line'}
+      <label class="flex items-center gap-2">
+        <span class="text-neutral-400">Mode</span>
+        <select bind:value={tool.shapeMode} class="rounded bg-neutral-800 px-2 py-1">
+          <option value="outline">Outline</option>
+          <option value="fill">Fill</option>
+          <option value="fill_and_outline">Fill + Outline</option>
+        </select>
+      </label>
+    {/if}
+
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Stroke</span>
+      <input type="range" min="1" max="100" bind:value={tool.strokeWidth} class="w-24" />
+      <span class="w-8 tabular-nums text-neutral-300">{tool.strokeWidth}</span>
+    </label>
+
+    {#if tool.shapeKind === 'polygon'}
+      <label class="flex items-center gap-2">
+        <span class="text-neutral-400">Sides</span>
+        <input type="range" min="3" max="100" bind:value={tool.shapeSides} class="w-24" />
+        <span class="w-8 tabular-nums text-neutral-300">{tool.shapeSides}</span>
+      </label>
+    {/if}
+
+    {#if tool.shapeKind === 'rounded_rectangle'}
+      <label class="flex items-center gap-2">
+        <span class="text-neutral-400">Radius</span>
+        <input type="range" min="0" max="200" bind:value={tool.cornerRadius} class="w-24" />
+        <span class="w-8 tabular-nums text-neutral-300">{tool.cornerRadius}</span>
+      </label>
+    {/if}
+
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Opacity</span>
+      <input type="range" min="1" max="100" bind:value={tool.opacity} class="w-24" />
+      <span class="w-10 tabular-nums text-neutral-300">{tool.opacity}%</span>
+    </label>
+
+    <label class="flex items-center gap-2">
+      <input type="checkbox" bind:checked={tool.shapeAntiAlias} />
+      <span class="text-neutral-400">Anti-alias</span>
+    </label>
+    <span class="text-neutral-500">Stroke = FG · Fill = BG · Shift = constrain</span>
+  {:else if tool.kind === 'text'}
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Size</span>
+      <input type="range" min="6" max="400" bind:value={tool.fontSize} class="w-32" />
+      <span class="w-10 tabular-nums text-neutral-300">{tool.fontSize}</span>
+    </label>
+
+    <label class="flex items-center gap-2">
+      <input type="checkbox" bind:checked={tool.textBold} />
+      <span class="text-neutral-400">Bold</span>
+    </label>
+
+    <label class="flex items-center gap-2">
+      <input type="checkbox" bind:checked={tool.textItalic} />
+      <span class="text-neutral-400">Italic</span>
+    </label>
+
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Align</span>
+      <select bind:value={tool.textAlign} class="rounded bg-neutral-800 px-2 py-1">
+        <option value="left">Left</option>
+        <option value="center">Center</option>
+        <option value="right">Right</option>
+      </select>
+    </label>
+
+    <label class="flex items-center gap-2">
+      <input type="checkbox" bind:checked={tool.textAntiAlias} />
+      <span class="text-neutral-400">Anti-alias</span>
+    </label>
+    <span class="text-neutral-500">Click to place · Esc or Ctrl+Enter to commit</span>
   {/if}
 
   {#if isShapeSelect || tool.kind === 'magic_wand'}

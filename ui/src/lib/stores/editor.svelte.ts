@@ -1,5 +1,13 @@
 // Reactive editor state (Svelte 5 runes). One store per concern (CLAUDE.md §5.4).
-import type { BrushShape, EraserMode, LayerInfo, SampleSource } from '../core/wasm';
+import type {
+  BrushShape,
+  EraserMode,
+  LayerInfo,
+  SampleSource,
+  ShapeKind,
+  ShapeMode,
+  TextAlign,
+} from '../core/wasm';
 
 /** The open document and its derived state. `handle` is the Rust-side index. */
 export const editor = $state({
@@ -28,7 +36,9 @@ export type ToolKind =
   | 'ellipse_select'
   | 'lasso'
   | 'polygon_lasso'
-  | 'magic_wand';
+  | 'magic_wand'
+  | 'shapes'
+  | 'text';
 
 /** Shape of an in-progress selection gesture, drawn by the overlay (spec §8.5). */
 export type SelectionPreview = {
@@ -39,6 +49,19 @@ export type SelectionPreview = {
 
 /** The live selection gesture preview, or `null` when not selecting. */
 export const selectionPreview = $state({ value: null as SelectionPreview | null });
+
+/** In-progress Shapes-tool gesture (drag rectangle), drawn by the overlay. */
+export type ShapePreview = {
+  kind: ShapeKind;
+  /** Drag start and current point (canvas space): endpoints or box corners. */
+  a: [number, number];
+  b: [number, number];
+  /** Polygon side count, mirrored so the preview matches the committed shape. */
+  sides: number;
+};
+
+/** The live Shapes-tool preview, or `null` when not drawing a shape. */
+export const shapePreview = $state({ value: null as ShapePreview | null });
 
 /** Tool options across the M6 tool suite (spec §9.2, §16.3). */
 export const tool = $state({
@@ -72,6 +95,28 @@ export const tool = $state({
   foreground: '#000000',
   /** Background color as #RRGGBB (spec §4.2 default white). */
   background: '#ffffff',
+  /** Shapes: which geometry to draw (spec §9.2 Shapes). */
+  shapeKind: 'rectangle' as ShapeKind,
+  /** Shapes: outline / fill / fill+outline. */
+  shapeMode: 'outline' as ShapeMode,
+  /** Shapes: centered stroke width in pixels, 1–500. */
+  strokeWidth: 3,
+  /** Shapes: polygon side count, 3–100. */
+  shapeSides: 5,
+  /** Shapes: rounded-rectangle corner radius in pixels. */
+  cornerRadius: 16,
+  /** Shapes: anti-alias shape edges. */
+  shapeAntiAlias: true,
+  /** Text: font size in pixels, 6–999. */
+  fontSize: 48,
+  /** Text: synthetic bold. */
+  textBold: false,
+  /** Text: synthetic italic. */
+  textItalic: false,
+  /** Text: anti-alias glyph edges. */
+  textAntiAlias: true,
+  /** Text: per-line horizontal alignment. */
+  textAlign: 'left' as TextAlign,
 });
 
 /** Swaps foreground and background colors (spec §4.2, `X`). */
