@@ -16,6 +16,7 @@
   import ToolOptions from './lib/components/toolbar/ToolOptions.svelte';
   import ColorsPanel from './lib/components/panels/ColorsPanel.svelte';
   import LayersPanel from './lib/components/panels/LayersPanel.svelte';
+  import TransformMenu from './lib/components/menus/TransformMenu.svelte';
 
   let fileInput: HTMLInputElement;
   let loadError = $state<string | null>(null);
@@ -127,6 +128,8 @@
     >
       Redo
     </button>
+    <div class="mx-2 h-5 w-px bg-[var(--fl-panel-border)]"></div>
+    <TransformMenu />
     <input
       bind:this={fileInput}
       type="file"

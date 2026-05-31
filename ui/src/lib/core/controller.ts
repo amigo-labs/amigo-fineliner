@@ -10,6 +10,9 @@ import {
   type LayerCommand,
   type SelectionCommand,
   type SelectionMode,
+  type TransformCommand,
+  type Interpolation,
+  type ResizeAnchor,
   type BlendMode,
   type Rgba,
 } from './wasm';
@@ -232,6 +235,50 @@ export function selectionMask(): Uint8ClampedArray | null {
   }
   const mask = core.selectionMask(editor.handle);
   return mask.length > 0 ? mask : null;
+}
+
+/** Applies a transform command, then refreshes derived state. */
+function applyTransform(cmd: TransformCommand): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Flips or 180°-rotates the active layer (spec §10.2/§10.3). */
+export function transformLayer(op: 'flip_h' | 'flip_v' | 'rotate_180'): void {
+  applyTransform({ type: 'transform_layer', layer: editor.activeLayer, op });
+}
+
+/** Rotates the active layer 90° (counter-clockwise when `ccw`). */
+export function rotateLayer90(ccw: boolean): void {
+  applyTransform({ type: 'rotate_layer_90', layer: editor.activeLayer, ccw });
+}
+
+/** Flips the whole canvas horizontally or vertically (spec §10.2). */
+export function flipCanvas(horizontal: boolean): void {
+  applyTransform({ type: 'flip_canvas', horizontal });
+}
+
+/** Rotates the whole canvas (spec §10.3). */
+export function rotateCanvas(rotation: 'cw90' | 'ccw90' | 'rotate_180'): void {
+  applyTransform({ type: 'rotate_canvas', rotation });
+}
+
+/** Scales the whole image to a new size (spec §10.5). */
+export function scaleImage(width: number, height: number, interpolation: Interpolation): void {
+  applyTransform({ type: 'scale_image', width, height, interpolation });
+}
+
+/** Resizes the canvas, anchoring existing content (spec §10.4). */
+export function resizeCanvas(width: number, height: number, anchor: ResizeAnchor): void {
+  applyTransform({ type: 'resize_canvas', width, height, anchor });
+}
+
+/** Crops the canvas to the current selection's bounding box (spec §10.6). */
+export function cropToSelection(): void {
+  applyTransform({ type: 'crop_to_selection' });
 }
 
 /** Creates a blank document and makes it the active one. */

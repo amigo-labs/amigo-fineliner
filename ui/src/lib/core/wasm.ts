@@ -150,6 +150,31 @@ export type SelectionCommand =
   | { type: 'contract_selection'; radius: number }
   | { type: 'feather_selection'; radius: number };
 
+/** Resampling quality for Scale Image (spec §10.5). */
+export type Interpolation = 'nearest' | 'bilinear' | 'bicubic';
+
+/** The 9-grid anchor for Resize Canvas (spec §10.4). */
+export type ResizeAnchor =
+  | 'top_left'
+  | 'top_center'
+  | 'top_right'
+  | 'center_left'
+  | 'center'
+  | 'center_right'
+  | 'bottom_left'
+  | 'bottom_center'
+  | 'bottom_right';
+
+/** Transform commands (spec §10). */
+export type TransformCommand =
+  | { type: 'transform_layer'; layer: number; op: 'flip_h' | 'flip_v' | 'rotate_180' }
+  | { type: 'rotate_layer_90'; layer: number; ccw: boolean }
+  | { type: 'flip_canvas'; horizontal: boolean }
+  | { type: 'rotate_canvas'; rotation: 'cw90' | 'ccw90' | 'rotate_180' }
+  | { type: 'scale_image'; width: number; height: number; interpolation: Interpolation }
+  | { type: 'resize_canvas'; width: number; height: number; anchor: ResizeAnchor }
+  | { type: 'crop_to_selection' };
+
 /** Any command emitted to the core. */
 export type ToolCommand =
   | PencilStrokeCommand
@@ -157,7 +182,8 @@ export type ToolCommand =
   | FillBucketCommand
   | TranslateLayerCommand
   | LayerCommand
-  | SelectionCommand;
+  | SelectionCommand
+  | TransformCommand;
 
 let initialized: Promise<unknown> | null = null;
 
