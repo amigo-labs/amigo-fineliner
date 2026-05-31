@@ -14,7 +14,8 @@ use fineliner_core::command::{
 use fineliner_core::{
     apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, Document, Eraser,
     EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil, Point,
-    Rect, SampleSize, SampleSource, SelectionMask, SelectionMode,
+    Rect, SampleSize, SampleSource, SelectionMask, SelectionMode, Shape, ShapeMode, ShapeStyle,
+    Shapes,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -136,6 +137,16 @@ fn default_anchor() -> String {
     "top_left".to_string()
 }
 
+/// Default shape mode when JS omits it.
+fn default_shape_mode() -> String {
+    "outline".to_string()
+}
+
+/// Default shape stroke width when JS omits it.
+fn default_stroke_width() -> f32 {
+    1.0
+}
+
 /// Maps a brush-shape string to a [`BrushShape`], defaulting to hard round.
 fn parse_shape(s: &str) -> BrushShape {
     match s {
@@ -220,6 +231,15 @@ fn parse_selection_mode(s: &str) -> SelectionMode {
         "subtract" => SelectionMode::Subtract,
         "intersect" => SelectionMode::Intersect,
         _ => SelectionMode::Replace,
+    }
+}
+
+/// Maps a shape-mode string to a [`ShapeMode`], defaulting to outline.
+fn parse_shape_mode(s: &str) -> ShapeMode {
+    match s {
+        "fill" => ShapeMode::Fill,
+        "fill_and_outline" => ShapeMode::FillAndOutline,
+        _ => ShapeMode::Outline,
     }
 }
 
@@ -417,6 +437,38 @@ enum CommandSpec {
     },
     /// Crop the canvas to the current selection's bounding box (spec §10.6).
     CropToSelection,
+    /// Rasterize a shape onto `layer` (spec §9.2 Shapes).
+    ///
+    /// `shape` selects the geometry: `line`/`rectangle`/`rounded_rectangle`/
+    /// `ellipse` read `points` as `[a, b]` (endpoints or opposite corners);
+    /// `polygon` reads `center`, `radius`, `sides` and `rotation`. The
+    /// `corner_radius` applies to rounded rectangles only.
+    DrawShape {
+        layer: usize,
+        shape: String,
+        #[serde(default)]
+        points: Vec<[f32; 2]>,
+        #[serde(default)]
+        corner_radius: f32,
+        #[serde(default)]
+        center: [f32; 2],
+        #[serde(default)]
+        radius: f32,
+        #[serde(default)]
+        sides: u32,
+        #[serde(default)]
+        rotation: f32,
+        #[serde(default = "default_shape_mode")]
+        mode: String,
+        #[serde(default = "default_stroke_width")]
+        stroke_width: f32,
+        #[serde(default)]
+        stroke_color: [u8; 4],
+        #[serde(default)]
+        fill_color: [u8; 4],
+        #[serde(default)]
+        anti_alias: bool,
+    },
 }
 
 /// Applies a JSON-encoded command to the document and records it in history.
@@ -676,6 +728,65 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             ))
             .map_err(to_js),
         CommandSpec::CropToSelection => bus.apply(Box::new(CropToSelection::new())).map_err(to_js),
+        CommandSpec::DrawShape {
+            layer,
+            shape,
+            points,
+            corner_radius,
+            center,
+            radius,
+            sides,
+            rotation,
+            mode,
+            stroke_width,
+            stroke_color,
+            fill_color,
+            anti_alias,
+        } => {
+            let corner = |i: usize| points.get(i).map(|q| Point::new(q[0], q[1]));
+            // line / rectangle / rounded_rectangle / ellipse take `points[0..2]`.
+            let built = match shape.as_str() {
+                "line" => corner(0).zip(corner(1)).map(|(a, b)| Shape::Line { a, b }),
+                "rectangle" => corner(0)
+                    .zip(corner(1))
+                    .map(|(a, b)| Shape::Rectangle { a, b }),
+                "rounded_rectangle" => {
+                    corner(0)
+                        .zip(corner(1))
+                        .map(|(a, b)| Shape::RoundedRectangle {
+                            a,
+                            b,
+                            radius: corner_radius,
+                        })
+                }
+                "ellipse" => corner(0)
+                    .zip(corner(1))
+                    .map(|(a, b)| Shape::Ellipse { a, b }),
+                "polygon" => Some(Shape::Polygon {
+                    center: Point::new(center[0], center[1]),
+                    radius,
+                    sides,
+                    rotation,
+                }),
+                _ => None,
+            };
+            let style = ShapeStyle {
+                mode: parse_shape_mode(&mode),
+                stroke_width,
+                stroke_color: Color::rgba(
+                    stroke_color[0],
+                    stroke_color[1],
+                    stroke_color[2],
+                    stroke_color[3],
+                ),
+                fill_color: Color::rgba(fill_color[0], fill_color[1], fill_color[2], fill_color[3]),
+                anti_alias,
+            };
+            match built.and_then(|s| Shapes::new(s, style).draw(layer, &bus.document)) {
+                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                None => Ok(()), // invalid geometry or off-canvas — no-op
+            }
+        }
     })
 }
 
