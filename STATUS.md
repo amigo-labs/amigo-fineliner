@@ -110,10 +110,11 @@ Milestone is XL; split into M tasks (core test-first, then WASM, then UI):
   with `combine` + `apply_mode`, rectangle & ellipse rasterizers, `invert`,
   `new_full`/`new_empty`, `selected_count`. `Document.selection` retyped from
   `Option<ImageBuffer>` to `Option<SelectionMask>`. 12 tests. Spec §8.1–§8.4.
-- [ ] **8B — magic wand, lasso, modifiers** (core): magic-wand mask (reuse the
-  Fill flood logic, contiguous + global, tolerance); polygon rasterizer for
-  Lasso / Polygonal Lasso; Expand / Contract (morphological) and Feather (mask
-  blur). Tests: wand contiguous vs global. Spec §8.4, §9.3.
+- [x] **8B — magic wand, lasso, modifiers** (core): `selection::magic_wand`
+  (BFS flood, contiguous + global, tolerance, current-layer/composite sample);
+  `SelectionMask::polygon` (even-odd scanline) for Lasso / Polygonal Lasso;
+  `expand` / `contract` (separable square dilation/erosion) and `feather`
+  (triple box blur). 13 tests incl. wand contiguous vs global. Spec §8.4, §9.3.
 - [ ] **8C — SetSelection command + mask constraint** (core): `SetSelection`
   (before/after `Option<SelectionMask>`), and apply the active mask as a
   per-pixel coverage multiplier in the brush rasterizer and Fill. Spec §7.3.
@@ -123,16 +124,21 @@ Milestone is XL; split into M tasks (core test-first, then WASM, then UI):
 - [ ] **8E — UI**: selection tools (M/L/W) pointer handling, mode modifiers
   (Shift/Alt), and the marching-ants overlay (CSS animation, spec §8.5).
 
-### Verification (8A)
+### Verification (8A + 8B)
 
-- `cargo test --workspace` green (130 core tests); `cargo clippy --workspace
-  --all-targets -- -D warnings` clean.
+- `cargo test --workspace` green (143 core tests); `cargo clippy -p
+  fineliner-core --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
 
-## Next concrete task — M8 8B (magic wand, lasso, modifiers)
+## Next concrete task — M8 8C (SetSelection + mask constraint)
 
-See the 8B bullet above. The Fill tool's flood-fill (`tools/fill.rs`) is the
-model for the Magic Wand's contiguous mode; factor out the shared traversal if
-it stays clean.
+Add a `SetSelection` command storing `before`/`after` `Option<SelectionMask>`
+(undoable; spec §7.3) and the Select All / Deselect / Invert / Expand /
+Contract / Feather operations that emit it. Then make the active selection
+constrain edits: multiply each written pixel's coverage by the mask in the
+brush rasterizer (`tools/brush.rs`) and in Fill (`tools/fill.rs`) — when
+`doc.selection` is `None`, everything is selected (no change). Tests: a stroke
+outside the selection writes nothing; a stroke straddling the edge writes only
+the selected side; feathered edges blend partially.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
