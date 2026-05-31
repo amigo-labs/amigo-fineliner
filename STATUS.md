@@ -184,11 +184,14 @@ Milestone is XL; split into M tasks (core test-first, then commands, then UI):
   interpolation (spec §10.1 interactive). Can be deferred — the discrete
   transforms + scale cover the M9 exit criteria; Free Transform is the
   interactive handle UI's backing math.
-- [ ] **9E — WASM bindings**: flip/rotate/scale-image/resize-canvas/crop commands
-  + the resize/scale dialog parameters. Decision Log entry.
+- [x] **9E — WASM bindings** (ADR-011): `apply_command`'s `CommandSpec` gained
+  `TransformLayer` (flip_h/flip_v/rotate_180), `RotateLayer90` (ccw),
+  `FlipCanvas` (horizontal), `RotateCanvas` (cw90/ccw90/rotate_180), `ScaleImage`
+  (width/height/interpolation), `ResizeCanvas` (width/height/anchor),
+  `CropToSelection`. Interpolation + anchor are snake_case strings.
 - [ ] **9F — UI**: Image/Layer menus (flip, rotate 90/180), Resize Canvas and
-  Scale Image dialogs (9-grid anchor, interpolation), Free Transform handles
-  (Ctrl+T) and Crop to selection. Spec §10, §16.
+  Scale Image dialogs (9-grid anchor, interpolation), Crop to selection. Free
+  Transform handles (Ctrl+T) deferred with 9D. Spec §10, §16.
 
 ### Verification (9A–9C)
 
@@ -200,16 +203,26 @@ The transform core is complete enough for the M9 exit criteria: flips, rotate
 (9-grid anchor), and crop to selection are all implemented and undoable. Only
 the WASM bindings and UI remain (plus optional interactive Free Transform).
 
-## Next concrete task — M9 9E (WASM bindings)
+## Next concrete task — M9 9F (transform UI)
 
-Extend `apply_command`'s `CommandSpec` with: `TransformLayer` (flip_h/flip_v/
-rotate_180), `RotateLayer90` (ccw flag), `FlipCanvas` (horizontal), `RotateCanvas`
-(cw90/ccw90/rotate_180), `ScaleImage` (width/height/interpolation), `ResizeCanvas`
-(width/height/anchor — note core `ResizeCanvas` already exists but isn't yet in
-the WASM `CommandSpec`), and `CropToSelection`. Interpolation and anchor cross
-the boundary as snake_case strings (reuse the convention). Decision Log entry.
-Then 9F: Image/Layer menus, Resize/Scale dialogs (9-grid anchor picker,
-interpolation dropdown), Rotate/Flip menu items, Crop to selection.
+The transform commands are now reachable from JS via `apply_command`. 9F wires
+them into the Svelte UI:
+- Add an Image menu (Flip H/V, Rotate 90 CW/CCW, Rotate 180, Resize Canvas…,
+  Scale Image…, Crop to Selection) and Layer menu (Flip H/V, Rotate 90/180) in
+  the header — or a compact menu bar (spec §16.1).
+- `ResizeDialog.svelte` (width/height + 9-grid anchor picker) and an
+  `ExportDialog`-style `ScaleDialog` (width/height, constrain-proportions,
+  interpolation dropdown). Spec §16 dialogs.
+- Controller functions emitting the transform `CommandSpec`s; extend the
+  `wasm.ts` `ToolCommand` union with the transform commands (snake_case `op`/
+  `rotation`/`interpolation`/`anchor` strings).
+- Crop to Selection disabled unless `editor.hasSelection`.
+
+### 9E done
+
+- WASM `CommandSpec` gained TransformLayer / RotateLayer90 / FlipCanvas /
+  RotateCanvas / ScaleImage / ResizeCanvas / CropToSelection (ADR-011).
+  `wasm-pack build` succeeds; `pnpm check` 0 errors.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
