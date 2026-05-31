@@ -15,7 +15,7 @@ use fineliner_core::{
     apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, Document, Eraser,
     EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil, Point,
     Rect, SampleSize, SampleSource, SelectionMask, SelectionMode, Shape, ShapeMode, ShapeStyle,
-    Shapes,
+    Shapes, Text, TextAlign, TextStyle,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -25,12 +25,27 @@ use wasm_bindgen::Clamped;
 thread_local! {
     /// Open documents, indexed by handle. `None` slots are closed documents.
     static DOCUMENTS: RefCell<Vec<Option<CommandBus>>> = const { RefCell::new(Vec::new()) };
+    /// Registered font byte blobs, indexed by font id (see `register_font`).
+    /// The Text tool re-parses these per commit (ADR-012), so JS uploads each
+    /// face once and references it by id rather than passing bytes per command.
+    static FONTS: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Installs a panic hook that logs Rust panics to the browser console.
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
+}
+
+/// Registers a TrueType/OpenType font and returns its id for use in `DrawText`
+/// commands (spec §9.2 Text; ADR-012, Option B — the caller supplies the font).
+#[wasm_bindgen]
+pub fn register_font(data: &[u8]) -> u32 {
+    FONTS.with(|fonts| {
+        let mut fonts = fonts.borrow_mut();
+        fonts.push(data.to_vec());
+        (fonts.len() - 1) as u32
+    })
 }
 
 /// Inserts a bus into the arena and returns its handle.
@@ -145,6 +160,25 @@ fn default_shape_mode() -> String {
 /// Default shape stroke width when JS omits it.
 fn default_stroke_width() -> f32 {
     1.0
+}
+
+/// Default text size (px) when JS omits it.
+fn default_text_size() -> f32 {
+    24.0
+}
+
+/// Default text alignment when JS omits it.
+fn default_text_align() -> String {
+    "left".to_string()
+}
+
+/// Maps a text-align string to a [`TextAlign`], defaulting to left.
+fn parse_text_align(s: &str) -> TextAlign {
+    match s {
+        "center" => TextAlign::Center,
+        "right" => TextAlign::Right,
+        _ => TextAlign::Left,
+    }
 }
 
 /// Maps a brush-shape string to a [`BrushShape`], defaulting to hard round.
@@ -469,6 +503,27 @@ enum CommandSpec {
         #[serde(default)]
         anti_alias: bool,
     },
+    /// Rasterize `text` onto `layer` at `(x, y)` using a `register_font` id
+    /// (spec §9.2 Text; ADR-012). A no-op if the font id or geometry is invalid.
+    DrawText {
+        layer: usize,
+        font_id: u32,
+        text: String,
+        x: f32,
+        y: f32,
+        #[serde(default = "default_text_size")]
+        size: f32,
+        #[serde(default)]
+        color: [u8; 4],
+        #[serde(default)]
+        bold: bool,
+        #[serde(default)]
+        italic: bool,
+        #[serde(default)]
+        anti_alias: bool,
+        #[serde(default = "default_text_align")]
+        align: String,
+    },
 }
 
 /// Applies a JSON-encoded command to the document and records it in history.
@@ -785,6 +840,37 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             match built.and_then(|s| Shapes::new(s, style).draw(layer, &bus.document)) {
                 Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
                 None => Ok(()), // invalid geometry or off-canvas — no-op
+            }
+        }
+        CommandSpec::DrawText {
+            layer,
+            font_id,
+            text,
+            x,
+            y,
+            size,
+            color,
+            bold,
+            italic,
+            anti_alias,
+            align,
+        } => {
+            let style = TextStyle {
+                size,
+                color: Color::rgba(color[0], color[1], color[2], color[3]),
+                bold,
+                italic,
+                anti_alias,
+                align: parse_text_align(&align),
+            };
+            let cmd = FONTS.with(|fonts| {
+                let fonts = fonts.borrow();
+                let bytes = fonts.get(font_id as usize)?;
+                Text::new(text, Point::new(x, y), style).render(layer, &bus.document, bytes)
+            });
+            match cmd {
+                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                None => Ok(()), // unknown font, empty text, or off-canvas — no-op
             }
         }
     })
