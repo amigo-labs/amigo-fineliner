@@ -23,7 +23,7 @@ pub use color::{BlendMode, Color};
 pub use command::{
     AddLayer, Command, CommandBus, DuplicateLayer, FlattenImage, MergeDown, MergeVisible,
     MoveLayer, RemoveLayer, RenameLayer, ResizeCanvas, SetLayerBlendMode, SetLayerLocked,
-    SetLayerOpacity, SetLayerVisible, SetPixels, UndoStack,
+    SetLayerOpacity, SetLayerVisible, SetPixels, SetSelection, UndoStack,
 };
 pub use document::{
     CanvasSize, ColorProfile, Document, DocumentMetadata, ImageBuffer, Layer, LayerKind,
