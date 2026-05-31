@@ -159,7 +159,7 @@ Milestone was XL; split into M tasks (core test-first, then WASM, then UI):
 - Overlay rebuilds the boundary path on every document mutation (O(canvas));
   fine for Phase 1, a dirty-rect optimization belongs to M16.
 
-## M9 — transform tools (in progress)
+## M9 — transform tools (complete bar optional Free Transform)
 
 Milestone is XL; split into M tasks (core test-first, then commands, then UI):
 
@@ -189,9 +189,12 @@ Milestone is XL; split into M tasks (core test-first, then commands, then UI):
   `FlipCanvas` (horizontal), `RotateCanvas` (cw90/ccw90/rotate_180), `ScaleImage`
   (width/height/interpolation), `ResizeCanvas` (width/height/anchor),
   `CropToSelection`. Interpolation + anchor are snake_case strings.
-- [ ] **9F — UI**: Image/Layer menus (flip, rotate 90/180), Resize Canvas and
-  Scale Image dialogs (9-grid anchor, interpolation), Crop to selection. Free
-  Transform handles (Ctrl+T) deferred with 9D. Spec §10, §16.
+- [x] **9F — UI** (`menus/TransformMenu.svelte`, `dialogs/ResizeDialog.svelte`,
+  `dialogs/ScaleDialog.svelte`): header Image menu (Flip H/V, Rotate 90 CW/CCW,
+  Rotate 180, Resize Canvas…, Scale Image…, Crop to Selection) and Layer menu
+  (Flip H/V, Rotate 90 CW/CCW, Rotate 180); Resize dialog with a 9-grid anchor
+  picker; Scale dialog with constrain-proportions + interpolation. Controller +
+  `wasm.ts` `TransformCommand` union wired. Crop disabled without a selection.
 
 ### Verification (9A–9C)
 
@@ -203,26 +206,33 @@ The transform core is complete enough for the M9 exit criteria: flips, rotate
 (9-grid anchor), and crop to selection are all implemented and undoable. Only
 the WASM bindings and UI remain (plus optional interactive Free Transform).
 
-## Next concrete task — M9 9F (transform UI)
+### Verification (M9)
 
-The transform commands are now reachable from JS via `apply_command`. 9F wires
-them into the Svelte UI:
-- Add an Image menu (Flip H/V, Rotate 90 CW/CCW, Rotate 180, Resize Canvas…,
-  Scale Image…, Crop to Selection) and Layer menu (Flip H/V, Rotate 90/180) in
-  the header — or a compact menu bar (spec §16.1).
-- `ResizeDialog.svelte` (width/height + 9-grid anchor picker) and an
-  `ExportDialog`-style `ScaleDialog` (width/height, constrain-proportions,
-  interpolation dropdown). Spec §16 dialogs.
-- Controller functions emitting the transform `CommandSpec`s; extend the
-  `wasm.ts` `ToolCommand` union with the transform commands (snake_case `op`/
-  `rotation`/`interpolation`/`anchor` strings).
-- Crop to Selection disabled unless `editor.hasSelection`.
+- `cargo test --workspace` green (174 core tests); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+- `wasm-pack build --target web --release` succeeds; `pnpm check` (svelte-check
+  0 errors/0 warnings), `pnpm build` green.
+- **Not yet done by a human:** visual browser run of the transform menus and
+  dialogs. To verify: `cd ui && pnpm dev`, then exercise Image/Layer flip and
+  rotate, Resize Canvas (try each anchor), Scale Image (each interpolation), and
+  Crop to Selection (with a selection active); confirm undo restores each.
 
-### 9E done
+### Known limitations / follow-ups
 
-- WASM `CommandSpec` gained TransformLayer / RotateLayer90 / FlipCanvas /
-  RotateCanvas / ScaleImage / ResizeCanvas / CropToSelection (ADR-011).
-  `wasm-pack build` succeeds; `pnpm check` 0 errors.
+- **Free Transform (spec §10.1, task 9D)** — interactive translate/scale/rotate
+  handles (Ctrl+T) are not implemented. The discrete transforms + Scale dialog
+  cover the M9 exit criteria; the affine math + handle UI is a follow-up.
+- Arbitrary-angle canvas rotation (spec §10.3) is deferred with Free Transform.
+
+## Next concrete task — M10 (shapes + text)
+
+Shapes: Line, Rectangle, Rounded Rectangle, Ellipse, Polygon (N-sided) with
+Outline / Fill / Fill+Outline modes, stroke width + dash; Text tool (font,
+size, bold/italic, color, anti-alias) rasterized on commit (ADR-003). Spec §11 /
+M10. Start with a core `shapes` rasterizer (test-first: outline pixel coverage,
+fill coverage) emitting `SetPixels`; text rasterization needs a font approach —
+check the spec for the chosen font stack before adding a dependency (stop-and-
+ask if a new font crate is required, per CLAUDE.md §9 / §12).
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
