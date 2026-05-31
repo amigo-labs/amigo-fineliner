@@ -182,6 +182,9 @@ export type ShapeKind = 'line' | 'rectangle' | 'rounded_rectangle' | 'ellipse' |
 /** How a shape's interior and border are painted (spec §9.2 Shapes). */
 export type ShapeMode = 'outline' | 'fill' | 'fill_and_outline';
 
+/** Outline dash pattern (spec §9.2 Shapes). */
+export type DashPattern = 'solid' | 'dashed' | 'dotted';
+
 /** Horizontal text alignment about the placement point (spec §9.2 Text). */
 export type TextAlign = 'left' | 'center' | 'right';
 
@@ -205,6 +208,7 @@ export interface DrawShapeCommand {
   stroke_color: Rgba;
   fill_color: Rgba;
   anti_alias: boolean;
+  dash: DashPattern;
 }
 
 /** Rasterize text onto a layer using a `registerFont` id (spec §9.2 Text). */

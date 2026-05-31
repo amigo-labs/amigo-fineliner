@@ -1,6 +1,7 @@
 // Reactive editor state (Svelte 5 runes). One store per concern (CLAUDE.md §5.4).
 import type {
   BrushShape,
+  DashPattern,
   EraserMode,
   LayerInfo,
   SampleSource,
@@ -101,6 +102,8 @@ export const tool = $state({
   shapeMode: 'outline' as ShapeMode,
   /** Shapes: centered stroke width in pixels, 1–500. */
   strokeWidth: 3,
+  /** Shapes: outline dash pattern. */
+  shapeDash: 'solid' as DashPattern,
   /** Shapes: polygon side count, 3–100. */
   shapeSides: 5,
   /** Shapes: rounded-rectangle corner radius in pixels. */

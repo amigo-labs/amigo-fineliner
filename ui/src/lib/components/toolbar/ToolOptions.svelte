@@ -164,6 +164,15 @@
       <span class="w-8 tabular-nums text-neutral-300">{tool.strokeWidth}</span>
     </label>
 
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Dash</span>
+      <select bind:value={tool.shapeDash} class="rounded bg-neutral-800 px-2 py-1">
+        <option value="solid">Solid</option>
+        <option value="dashed">Dashed</option>
+        <option value="dotted">Dotted</option>
+      </select>
+    </label>
+
     {#if tool.shapeKind === 'polygon'}
       <label class="flex items-center gap-2">
         <span class="text-neutral-400">Sides</span>

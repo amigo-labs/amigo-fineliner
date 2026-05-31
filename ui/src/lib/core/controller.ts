@@ -315,6 +315,7 @@ export function drawShape(a: [number, number], b: [number, number]): void {
     stroke_color: colorWithOpacity(tool.foreground),
     fill_color: colorWithOpacity(tool.background),
     anti_alias: tool.shapeAntiAlias,
+    dash: tool.shapeDash,
   };
   if (tool.shapeKind === 'polygon') {
     const w = Math.abs(b[0] - a[0]);

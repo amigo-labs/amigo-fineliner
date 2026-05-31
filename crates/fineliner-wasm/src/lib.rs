@@ -12,10 +12,10 @@ use fineliner_core::command::{
     SetLayerOpacity, SetLayerVisible, SetSelection, TransformLayer,
 };
 use fineliner_core::{
-    apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, Document, Eraser,
-    EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil, Point,
-    Rect, SampleSize, SampleSource, SelectionMask, SelectionMode, Shape, ShapeMode, ShapeStyle,
-    Shapes, Text, TextAlign, TextStyle,
+    apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, DashPattern, Document,
+    Eraser, EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil,
+    Point, Rect, SampleSize, SampleSource, SelectionMask, SelectionMode, Shape, ShapeMode,
+    ShapeStyle, Shapes, Text, TextAlign, TextStyle,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -277,6 +277,20 @@ fn parse_shape_mode(s: &str) -> ShapeMode {
     }
 }
 
+/// Default shape dash pattern when JS omits it.
+fn default_dash() -> String {
+    "solid".to_string()
+}
+
+/// Maps a dash-pattern string to a [`DashPattern`], defaulting to solid.
+fn parse_dash(s: &str) -> DashPattern {
+    match s {
+        "dashed" => DashPattern::Dashed,
+        "dotted" => DashPattern::Dotted,
+        _ => DashPattern::Solid,
+    }
+}
+
 /// Maps an interpolation string to an [`Interpolation`], defaulting to bilinear.
 fn parse_interpolation(s: &str) -> Interpolation {
     match s {
@@ -502,6 +516,8 @@ enum CommandSpec {
         fill_color: [u8; 4],
         #[serde(default)]
         anti_alias: bool,
+        #[serde(default = "default_dash")]
+        dash: String,
     },
     /// Rasterize `text` onto `layer` at `(x, y)` using a `register_font` id
     /// (spec §9.2 Text; ADR-012). A no-op if the font id or geometry is invalid.
@@ -797,6 +813,7 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             stroke_color,
             fill_color,
             anti_alias,
+            dash,
         } => {
             let corner = |i: usize| points.get(i).map(|q| Point::new(q[0], q[1]));
             // line / rectangle / rounded_rectangle / ellipse take `points[0..2]`.
@@ -836,6 +853,7 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
                 ),
                 fill_color: Color::rgba(fill_color[0], fill_color[1], fill_color[2], fill_color[3]),
                 anti_alias,
+                dash: parse_dash(&dash),
             };
             match built.and_then(|s| Shapes::new(s, style).draw(layer, &bus.document)) {
                 Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
