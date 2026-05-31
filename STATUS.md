@@ -101,13 +101,38 @@ Milestone was L/XL; split into M tasks (core test-first, then WASM, then UI):
   visibility/lock, edit opacity/blend, rename, merge down / merge visible /
   flatten, and confirm thumbnails update and undo/redo restores each step.
 
-## Next concrete task — M8 (selection tools)
+## M8 — selection tools (in progress)
 
-Rectangle / Ellipse / Lasso / Polygonal Lasso / Magic Wand; Add/Subtract/
-Intersect modes; Expand/Contract/Feather/Invert/Select All/Deselect; selection
-as a mask constraining brush/fill; marching-ants in the UI. Spec §8 / M8.
-`Document.selection` (an `Option<ImageBuffer>` mask) already exists in core but
-is unused — M8 wires it through tools and adds `SetSelection` (spec §7.3).
+Milestone is XL; split into M tasks (core test-first, then WASM, then UI):
+
+- [x] **8A — selection mask foundation** (`selection/mod.rs`): `SelectionMask`
+  (single-channel coverage), `SelectionMode` (Replace/Add/Subtract/Intersect)
+  with `combine` + `apply_mode`, rectangle & ellipse rasterizers, `invert`,
+  `new_full`/`new_empty`, `selected_count`. `Document.selection` retyped from
+  `Option<ImageBuffer>` to `Option<SelectionMask>`. 12 tests. Spec §8.1–§8.4.
+- [ ] **8B — magic wand, lasso, modifiers** (core): magic-wand mask (reuse the
+  Fill flood logic, contiguous + global, tolerance); polygon rasterizer for
+  Lasso / Polygonal Lasso; Expand / Contract (morphological) and Feather (mask
+  blur). Tests: wand contiguous vs global. Spec §8.4, §9.3.
+- [ ] **8C — SetSelection command + mask constraint** (core): `SetSelection`
+  (before/after `Option<SelectionMask>`), and apply the active mask as a
+  per-pixel coverage multiplier in the brush rasterizer and Fill. Spec §7.3.
+- [ ] **8D — WASM bindings**: selection commands (rect/ellipse/lasso/wand draws
+  carrying mode), Select All / Deselect / Invert / Expand / Contract / Feather,
+  and a selection-outline query for marching ants. Decision Log entry.
+- [ ] **8E — UI**: selection tools (M/L/W) pointer handling, mode modifiers
+  (Shift/Alt), and the marching-ants overlay (CSS animation, spec §8.5).
+
+### Verification (8A)
+
+- `cargo test --workspace` green (130 core tests); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean.
+
+## Next concrete task — M8 8B (magic wand, lasso, modifiers)
+
+See the 8B bullet above. The Fill tool's flood-fill (`tools/fill.rs`) is the
+model for the Magic Wand's contiguous mode; factor out the shared traversal if
+it stays clean.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
