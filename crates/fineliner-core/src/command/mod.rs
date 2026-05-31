@@ -18,7 +18,7 @@ pub use pixels::{PixelEdit, SetPixels};
 pub use properties::{
     RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
 };
-pub use resize::ResizeCanvas;
+pub use resize::{Anchor, ResizeCanvas};
 pub use selection::SetSelection;
 pub use transform::{CanvasRotation, FlipCanvas, LayerTransform, RotateCanvas, TransformLayer};
 
