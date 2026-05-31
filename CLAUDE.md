@@ -665,6 +665,23 @@ ADR-008: WASM layer API for M7 — 2026-05
             API surface; the layer fields extend DocumentInfo rather than adding
             a parallel call. Blend modes cross the JS boundary as stable
             snake_case strings, matching the existing tool-option convention.
+
+ADR-009: WASM selection API for M8 — 2026-05
+  Decision: apply_command's SerializedCommand gains the selection draws
+            SelectRectangle / SelectEllipse / SelectPolygon / SelectWand (each
+            carrying a `mode` of replace/add/subtract/intersect, shapes also a
+            `feather` radius) and the modifiers SelectAll / Deselect /
+            InvertSelection / ExpandSelection / ContractSelection /
+            FeatherSelection. The mask is built and combined (apply_mode) in
+            Rust, then applied as one undoable SetSelection. get_document_info
+            gains `has_selection`. Adds get_selection_bounds(handle) → [x,y,w,h]
+            and get_selection_mask(handle) → coverage bytes for the overlay.
+  Rationale: Selection masks are canvas-sized and live in Rust (ADR-001); JS
+            sends gestures + mode and receives only bounds / coverage for the
+            marching-ants overlay (spec §8.5). Combining in Rust keeps the
+            "no prior selection = everything selected" rule (spec §8.1) in one
+            place. Modes and sample sources reuse the snake_case string
+            convention from the tool options.
 ```
 
 ---

@@ -8,10 +8,12 @@ use fineliner_core::codec::{to_jpeg_bytes, to_png_bytes, to_webp_bytes};
 use fineliner_core::command::{
     AddLayer, CommandBus, DuplicateLayer, FlattenImage, MergeDown, MergeVisible, MoveLayer,
     RemoveLayer, RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
+    SetSelection,
 };
 use fineliner_core::{
-    compose, BlendMode, Brush, BrushShape, Color, Document, Eraser, EraserMode, Eyedropper, Fill,
-    FillOptions, ImageBuffer, Move, Pencil, Point, SampleSize, SampleSource,
+    apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, Document, Eraser,
+    EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Move, Pencil, Point, Rect, SampleSize,
+    SampleSource, SelectionMask, SelectionMode,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -118,6 +120,11 @@ fn default_sample() -> String {
     "current_layer".to_string()
 }
 
+/// Default selection mode when JS omits it.
+fn default_selection_mode() -> String {
+    "replace".to_string()
+}
+
 /// Maps a brush-shape string to a [`BrushShape`], defaulting to hard round.
 fn parse_shape(s: &str) -> BrushShape {
     match s {
@@ -193,6 +200,16 @@ fn thumbnail(src: &ImageBuffer) -> Vec<u8> {
         }
     }
     out
+}
+
+/// Maps a selection-mode string to a [`SelectionMode`], defaulting to Replace.
+fn parse_selection_mode(s: &str) -> SelectionMode {
+    match s {
+        "add" => SelectionMode::Add,
+        "subtract" => SelectionMode::Subtract,
+        "intersect" => SelectionMode::Intersect,
+        _ => SelectionMode::Replace,
+    }
 }
 
 /// Maps a sample-source string to a [`SampleSource`], defaulting to the layer.
@@ -287,6 +304,60 @@ enum CommandSpec {
     MergeVisible,
     /// Flatten every layer onto an opaque white background.
     FlattenImage,
+    /// Rectangular selection over `(x, y, w, h)` combined per `mode`.
+    SelectRectangle {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        #[serde(default = "default_selection_mode")]
+        mode: String,
+        #[serde(default)]
+        feather: u32,
+    },
+    /// Elliptical selection inscribed in `(x, y, w, h)` combined per `mode`.
+    SelectEllipse {
+        x: i32,
+        y: i32,
+        w: u32,
+        h: u32,
+        #[serde(default = "default_selection_mode")]
+        mode: String,
+        #[serde(default)]
+        feather: u32,
+    },
+    /// Polygonal selection over `points` ([x, y] each) combined per `mode`.
+    SelectPolygon {
+        points: Vec<[f32; 2]>,
+        #[serde(default = "default_selection_mode")]
+        mode: String,
+        #[serde(default)]
+        feather: u32,
+    },
+    /// Magic-wand selection seeded at `(x, y)` on `layer`, combined per `mode`.
+    SelectWand {
+        layer: usize,
+        x: f32,
+        y: f32,
+        tolerance: u8,
+        contiguous: bool,
+        #[serde(default = "default_sample")]
+        sample: String,
+        #[serde(default = "default_selection_mode")]
+        mode: String,
+    },
+    /// Select the whole canvas (spec §8.4 Select All).
+    SelectAll,
+    /// Clear the selection (spec §8.4 Deselect).
+    Deselect,
+    /// Invert the selection (spec §8.4 Invert).
+    InvertSelection,
+    /// Grow the selection by `radius` pixels (spec §8.4 Expand).
+    ExpandSelection { radius: u32 },
+    /// Shrink the selection by `radius` pixels (spec §8.4 Contract).
+    ContractSelection { radius: u32 },
+    /// Soften the selection edges by `radius` pixels (spec §8.4 Feather).
+    FeatherSelection { radius: u32 },
 }
 
 /// Applies a JSON-encoded command to the document and records it in history.
@@ -411,7 +482,126 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
         }
         CommandSpec::MergeVisible => bus.apply(Box::new(MergeVisible::new())).map_err(to_js),
         CommandSpec::FlattenImage => bus.apply(Box::new(FlattenImage::new())).map_err(to_js),
+        CommandSpec::SelectRectangle {
+            x,
+            y,
+            w,
+            h,
+            mode,
+            feather,
+        } => {
+            let (cw, ch) = (bus.document.canvas.width(), bus.document.canvas.height());
+            let mut shape = SelectionMask::rectangle(cw, ch, Rect::new(x, y, w, h));
+            shape.feather(feather);
+            apply_selection(bus, shape, parse_selection_mode(&mode), "Rectangle Select")
+        }
+        CommandSpec::SelectEllipse {
+            x,
+            y,
+            w,
+            h,
+            mode,
+            feather,
+        } => {
+            let (cw, ch) = (bus.document.canvas.width(), bus.document.canvas.height());
+            let mut shape = SelectionMask::ellipse(cw, ch, Rect::new(x, y, w, h));
+            shape.feather(feather);
+            apply_selection(bus, shape, parse_selection_mode(&mode), "Ellipse Select")
+        }
+        CommandSpec::SelectPolygon {
+            points,
+            mode,
+            feather,
+        } => {
+            let (cw, ch) = (bus.document.canvas.width(), bus.document.canvas.height());
+            let pts: Vec<Point> = points.iter().map(|p| Point::new(p[0], p[1])).collect();
+            let mut shape = SelectionMask::polygon(cw, ch, &pts);
+            shape.feather(feather);
+            apply_selection(bus, shape, parse_selection_mode(&mode), "Lasso Select")
+        }
+        CommandSpec::SelectWand {
+            layer,
+            x,
+            y,
+            tolerance,
+            contiguous,
+            sample,
+            mode,
+        } => {
+            match magic_wand(
+                &bus.document,
+                layer,
+                Point::new(x, y),
+                tolerance,
+                contiguous,
+                parse_sample(&sample),
+            ) {
+                Some(shape) => {
+                    apply_selection(bus, shape, parse_selection_mode(&mode), "Magic Wand")
+                }
+                None => Ok(()), // off-canvas seed — no-op
+            }
+        }
+        CommandSpec::SelectAll => {
+            let (cw, ch) = (bus.document.canvas.width(), bus.document.canvas.height());
+            bus.apply(Box::new(
+                SetSelection::replace(SelectionMask::new_full(cw, ch)).with_label("Select All"),
+            ))
+            .map_err(to_js)
+        }
+        CommandSpec::Deselect => bus.apply(Box::new(SetSelection::clear())).map_err(to_js),
+        CommandSpec::InvertSelection => {
+            let (cw, ch) = (bus.document.canvas.width(), bus.document.canvas.height());
+            // No selection means everything is selected, so its inverse is empty.
+            let mut mask = bus
+                .document
+                .selection
+                .clone()
+                .unwrap_or_else(|| SelectionMask::new_full(cw, ch));
+            mask.invert();
+            bus.apply(Box::new(
+                SetSelection::replace(mask).with_label("Invert Selection"),
+            ))
+            .map_err(to_js)
+        }
+        CommandSpec::ExpandSelection { radius } => {
+            modify_selection(bus, "Expand Selection", |m| m.expand(radius))
+        }
+        CommandSpec::ContractSelection { radius } => {
+            modify_selection(bus, "Contract Selection", |m| m.contract(radius))
+        }
+        CommandSpec::FeatherSelection { radius } => {
+            modify_selection(bus, "Feather Selection", |m| m.feather(radius))
+        }
     })
+}
+
+/// Combines `shape` with the current selection per `mode` and applies it as an
+/// undoable [`SetSelection`] labeled `label`.
+fn apply_selection(
+    bus: &mut CommandBus,
+    shape: SelectionMask,
+    mode: SelectionMode,
+    label: &'static str,
+) -> Result<(), JsError> {
+    let after = apply_mode(bus.document.selection.as_ref(), shape, mode);
+    bus.apply(Box::new(SetSelection::replace(after).with_label(label)))
+        .map_err(to_js)
+}
+
+/// Applies an in-place modifier (`expand`/`contract`/`feather`) to the current
+/// selection. A no-op when nothing is selected (the whole canvas is implied).
+fn modify_selection(
+    bus: &mut CommandBus,
+    label: &'static str,
+    f: impl FnOnce(&mut SelectionMask),
+) -> Result<(), JsError> {
+    let Some(mut mask) = bus.document.selection.clone() else {
+        return Ok(());
+    };
+    f(&mut mask);
+    bus.apply(Box::new(SetSelection::replace(mask).with_label(label)))
+        .map_err(to_js)
 }
 
 /// Samples a color at canvas point `(x, y)` (the Eyedropper tool).
@@ -506,6 +696,8 @@ struct DocumentInfo {
     active_layer: usize,
     can_undo: bool,
     can_redo: bool,
+    /// Whether a selection is currently active (`Some` mask in the document).
+    has_selection: bool,
     /// Layers ordered bottom (index 0) to top, matching core storage order.
     layers: Vec<LayerInfo>,
 }
@@ -534,6 +726,7 @@ pub fn get_document_info(handle: u32) -> Result<JsValue, JsError> {
             active_layer: bus.document.active_layer_index(),
             can_undo: bus.history.can_undo(),
             can_redo: bus.history.can_redo(),
+            has_selection: bus.document.selection.is_some(),
             layers,
         };
         serde_wasm_bindgen::to_value(&info).map_err(|e| JsError::new(&e.to_string()))
@@ -552,6 +745,40 @@ pub fn get_layer_thumbnail(handle: u32, layer_id: &str) -> Result<Clamped<Vec<u8
             .find(|l| l.id.to_string() == layer_id)
             .ok_or_else(|| JsError::new("layer not found"))?;
         Ok(Clamped(thumbnail(&layer.pixels)))
+    })
+}
+
+/// Returns the selection's bounding box as `[x, y, w, h]`, or an empty array
+/// when there is no active selection. Used to position the marching-ants
+/// overlay (spec §8.5).
+#[wasm_bindgen]
+pub fn get_selection_bounds(handle: u32) -> Result<Vec<u32>, JsError> {
+    with_bus(handle, |bus| {
+        match bus
+            .document
+            .selection
+            .as_ref()
+            .and_then(|s| s.bounding_box())
+        {
+            Some(r) => Ok(vec![r.x.max(0) as u32, r.y.max(0) as u32, r.w, r.h]),
+            None => Ok(Vec::new()),
+        }
+    })
+}
+
+/// Returns the raw selection coverage mask (one byte per pixel, row-major,
+/// canvas-sized), or an empty array when there is no active selection. The UI
+/// overlay derives the marching-ants outline from it (spec §8.5).
+#[wasm_bindgen]
+pub fn get_selection_mask(handle: u32) -> Result<Clamped<Vec<u8>>, JsError> {
+    with_bus(handle, |bus| {
+        Ok(Clamped(
+            bus.document
+                .selection
+                .as_ref()
+                .map(|s| s.data().to_vec())
+                .unwrap_or_default(),
+        ))
     })
 }
 
