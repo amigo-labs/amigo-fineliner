@@ -101,9 +101,9 @@ Milestone was L/XL; split into M tasks (core test-first, then WASM, then UI):
   visibility/lock, edit opacity/blend, rename, merge down / merge visible /
   flatten, and confirm thumbnails update and undo/redo restores each step.
 
-## M8 — selection tools (in progress)
+## M8 — selection tools (complete)
 
-Milestone is XL; split into M tasks (core test-first, then WASM, then UI):
+Milestone was XL; split into M tasks (core test-first, then WASM, then UI):
 
 - [x] **8A — selection mask foundation** (`selection/mod.rs`): `SelectionMask`
   (single-channel coverage), `SelectionMode` (Replace/Add/Subtract/Intersect)
@@ -127,38 +127,45 @@ Milestone is XL; split into M tasks (core test-first, then WASM, then UI):
   `FeatherSelection`. Masks build + combine (`apply_mode`) in Rust → one
   `SetSelection`. `get_document_info` gains `has_selection`; new
   `get_selection_bounds` and `get_selection_mask` queries for the overlay.
-- [ ] **8E — UI**: selection tools (M/L/W) pointer handling, mode modifiers
-  (Shift/Alt), Select All / Deselect / Invert menu/shortcuts, and the
-  marching-ants overlay (spec §8.5). Consume `get_selection_bounds` /
-  `get_selection_mask`; `has_selection` is already in `DocumentInfo`.
+- [x] **8E — UI**: five selection `ToolKind`s with toolbar buttons + M/L/W
+  shortcuts (M/L cycle their pair); pointer gestures in `pointer.ts` (rubber-band
+  rect/ellipse with Shift = square/circle, freehand Lasso, click-to-place +
+  double-click/near-start close for Polygonal Lasso, click for Magic Wand);
+  Shift/Alt → add/subtract/intersect mode; `CanvasOverlay.svelte` marching-ants
+  overlay (animated dashed boundary traced from `get_selection_mask`, plus the
+  in-progress gesture); Ctrl+A/Ctrl+D/Ctrl+Shift+I and Expand/Contract/Feather/
+  Invert/Deselect buttons in the tool options bar.
 
-### Verification (8A–8D)
+### Verification (M8 complete)
 
 - `cargo test --workspace` green (151 core tests); `cargo clippy --workspace
   --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
-- `wasm-pack build --target web --release` succeeds; selection exports present
-  (`get_selection_bounds`, `get_selection_mask`). `pnpm check` 0 errors.
+- `wasm-pack build --target web --release` succeeds; `pnpm check` (svelte-check
+  0 errors), `pnpm lint`, `pnpm build` all green.
+- **Not yet done by a human:** visual browser run of the selection tools and
+  marching-ants overlay. To verify: `cd ui && pnpm dev`, then draw rect/ellipse/
+  lasso/polygon/wand selections (with Shift/Alt for add/subtract/intersect),
+  confirm marching ants animate around the boundary and the in-progress shape,
+  paint/fill inside vs outside the selection, and exercise Ctrl+A / Ctrl+D /
+  Ctrl+Shift+I and the Expand/Contract/Feather buttons.
 
-The selection system is fully functional through the WASM boundary: masks build
-(rect/ellipse/polygon/wand), modify (combine modes, invert, expand, contract,
-feather), store undoably, and constrain brush/fill. Only the UI (8E) remains.
+### Known limitations / follow-ups
 
-## Next concrete task — M8 8E (selection UI)
+- Marching ants stroke the mask's per-pixel boundary edges with an animated dash
+  offset (not a single traced contour); good enough for Phase 1, revisit for
+  large selections in the M16 performance pass.
+- Selection shapes are hard-edged in the rasterizer; the Lasso/Wand "anti-alias"
+  option (spec §9.3) and the rect/ellipse anti-aliased edges are deferred.
+- Overlay rebuilds the boundary path on every document mutation (O(canvas));
+  fine for Phase 1, a dirty-rect optimization belongs to M16.
 
-Wire the selection tools into the Svelte UI:
-- Add `ToolKind`s `rect_select`, `ellipse_select`, `lasso`, `polygon_lasso`,
-  `magic_wand`; toolbar buttons + shortcuts (M cycles rect/ellipse, L cycles
-  the lassos, W = wand — see spec §16.2 keymap).
-- Pointer handlers (`tools/pointer.ts`): rubber-band drag for rect/ellipse
-  (Shift = square/circle), freehand point capture for Lasso, click-to-place +
-  double-click close for Polygonal Lasso, click for Magic Wand. Read Shift/Alt
-  into the selection `mode` (Shift=add, Alt=subtract, Shift+Alt=intersect).
-- Controller: `selectRectangle/Ellipse/Polygon/Wand`, `selectAll`, `deselect`,
-  `invertSelection`, `expand/contract/featherSelection`; mirror `has_selection`
-  + bounds into the store; Ctrl+A / Ctrl+D / Ctrl+Shift+I shortcuts.
-- Marching-ants overlay (`CanvasOverlay.svelte`, spec §8.5): fetch
-  `get_selection_mask`, trace the boundary onto an overlay canvas, animate the
-  dash offset. Verify visually in the browser.
+## Next concrete task — M9 (transform tools)
+
+Free Transform (translate/scale/rotate), Flip H/V (layer + canvas), Rotate
+90/180, Crop to selection / canvas, Resize canvas (9-grid anchor), Scale image
+(nearest/bilinear/bicubic). Spec §10 / M9. `transform/` is a new core module
+(CLAUDE.md §5.1); start with the affine + interpolation core (test-first:
+rotate 90×4 = identity, scale ×2 then ×0.5 ≈ identity) before the UI.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
