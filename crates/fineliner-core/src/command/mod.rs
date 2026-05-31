@@ -10,6 +10,7 @@ mod pixels;
 mod properties;
 mod resize;
 mod selection;
+mod transform;
 
 pub use layers::{AddLayer, DuplicateLayer, MoveLayer, RemoveLayer};
 pub use merge::{FlattenImage, MergeDown, MergeVisible};
@@ -19,6 +20,7 @@ pub use properties::{
 };
 pub use resize::ResizeCanvas;
 pub use selection::SetSelection;
+pub use transform::{CanvasRotation, FlipCanvas, LayerTransform, RotateCanvas, TransformLayer};
 
 use crate::document::Document;
 use crate::error::DocumentError;
