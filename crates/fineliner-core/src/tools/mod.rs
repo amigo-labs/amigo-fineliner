@@ -11,11 +11,13 @@ mod eraser;
 mod eyedropper;
 mod fill;
 mod move_tool;
+mod shapes;
 
 pub use eraser::{Eraser, EraserMode};
 pub use eyedropper::{Eyedropper, SampleSize};
 pub use fill::{Fill, FillOptions, SampleSource};
 pub use move_tool::Move;
+pub use shapes::{Shape, ShapeMode, ShapeStyle, Shapes};
 
 use crate::color::Color;
 use crate::command::SetPixels;

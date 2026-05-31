@@ -38,7 +38,7 @@ pub use render::{compose, compose_over};
 pub use selection::{apply_mode, magic_wand, SelectionMask, SelectionMode};
 pub use tools::{
     Brush, BrushShape, Eraser, EraserMode, Eyedropper, Fill, FillOptions, Move, Pencil, SampleSize,
-    SampleSource,
+    SampleSource, Shape, ShapeMode, ShapeStyle, Shapes,
 };
 pub use transform::{
     flip_horizontal, flip_vertical, rotate_180, rotate_90_ccw, rotate_90_cw, scale, Interpolation,
