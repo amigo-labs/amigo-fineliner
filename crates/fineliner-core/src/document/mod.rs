@@ -71,7 +71,7 @@ pub struct Document {
     /// Index of the active layer.
     active_layer: usize,
     /// Optional global selection mask; `None` means everything is selected.
-    pub selection: Option<crate::document::ImageBuffer>,
+    pub selection: Option<crate::selection::SelectionMask>,
     /// Document metadata.
     pub metadata: DocumentMetadata,
 }
