@@ -6,10 +6,14 @@
 
 mod layers;
 mod pixels;
+mod properties;
 mod resize;
 
-pub use layers::{AddLayer, MoveLayer, RemoveLayer};
+pub use layers::{AddLayer, DuplicateLayer, MoveLayer, RemoveLayer};
 pub use pixels::{PixelEdit, SetPixels};
+pub use properties::{
+    RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
+};
 pub use resize::ResizeCanvas;
 
 use crate::document::Document;

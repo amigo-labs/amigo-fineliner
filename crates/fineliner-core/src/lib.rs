@@ -20,7 +20,9 @@ pub mod tools;
 
 pub use color::{BlendMode, Color};
 pub use command::{
-    AddLayer, Command, CommandBus, MoveLayer, RemoveLayer, ResizeCanvas, SetPixels, UndoStack,
+    AddLayer, Command, CommandBus, DuplicateLayer, MoveLayer, RemoveLayer, RenameLayer,
+    ResizeCanvas, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible, SetPixels,
+    UndoStack,
 };
 pub use document::{
     CanvasSize, ColorProfile, Document, DocumentMetadata, ImageBuffer, Layer, LayerKind,

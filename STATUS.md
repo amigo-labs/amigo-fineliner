@@ -68,10 +68,28 @@ UI-wiring task. Order:
 - **Not yet done by a human:** visual browser run of the new tools. To verify:
   `cd ui && pnpm dev`, then exercise Pencil/Eraser/Fill/Eyedropper/Move.
 
-## Next concrete task — M7 (layer system UI)
+## M7 — layer system UI (in progress)
 
-Layer panel (add/delete/duplicate/reorder/visibility/lock/rename/opacity/blend),
-32×32 thumbnails, 999-layer cap, merge-visible / flatten. Spec §16 / M7.
+Milestone is L/XL; split into M tasks (core test-first, then WASM, then UI):
+
+- [ ] **A — layer property + duplicate commands** (core, `command/properties.rs`,
+  `command/layers.rs`): `RenameLayer`, `SetLayerOpacity` (slider-drag merge),
+  `SetLayerBlendMode`, `SetLayerVisible`, `SetLayerLocked`, `DuplicateLayer`.
+  Apply/revert round-trip tests. Spec §5.2 / §7.3.
+- [ ] **B — merge / flatten commands** (core, `command/merge.rs`): `MergeDown`,
+  `MergeVisible`, `FlattenImage` (onto white). Composite-preserving round-trip
+  tests. Spec §5.2 / §7.3.
+- [ ] **C — WASM bindings**: extend `CommandSpec` with the new layer commands;
+  enrich `get_document_info` with per-layer state (name/opacity/blend/visible/
+  locked/id); add `get_layer_thumbnail` (spec §17). Decision Log entry for the
+  enriched info shape.
+- [ ] **D — Layers panel UI** (`LayersPanel.svelte` + store): row per layer
+  (eye, lock, 32×32 thumbnail, name, blend dropdown, opacity slider),
+  add/delete/duplicate/merge-down buttons, drag-to-reorder, rename. Spec §16.5.
+
+Exit criteria (spec M7): panel shows layers + thumbnails; add/delete/duplicate/
+reorder/rename/opacity/blend all work; merge-visible and flatten pass round-trip.
+
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
 modifier/cursor state.
