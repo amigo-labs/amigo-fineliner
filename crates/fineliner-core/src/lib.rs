@@ -32,7 +32,7 @@ pub use document::{
 pub use error::DocumentError;
 pub use geometry::{Point, Rect, Size};
 pub use render::{compose, compose_over};
-pub use selection::{apply_mode, SelectionMask, SelectionMode};
+pub use selection::{apply_mode, magic_wand, SelectionMask, SelectionMode};
 pub use tools::{
     Brush, BrushShape, Eraser, EraserMode, Eyedropper, Fill, FillOptions, Move, Pencil, SampleSize,
     SampleSource,

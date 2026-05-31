@@ -7,7 +7,12 @@
 //! basic shape rasterizers (rectangle, ellipse). Lasso, magic wand, and the
 //! expand/contract/feather modifiers build on these in later tasks.
 
-use crate::geometry::Rect;
+mod modifiers;
+mod wand;
+
+pub use wand::magic_wand;
+
+use crate::geometry::{Point, Rect};
 use serde::{Deserialize, Serialize};
 
 /// How a newly drawn selection combines with the existing one (spec §8.2).
@@ -139,6 +144,42 @@ impl SelectionMask {
                 let ny = (y as f32 + 0.5 - cy) / ry;
                 if nx * nx + ny * ny <= 1.0 {
                     mask.set(x, y, 255);
+                }
+            }
+        }
+        mask
+    }
+
+    /// A polygonal selection filled by the even-odd rule (Lasso / Polygonal
+    /// Lasso, spec §9.3). `points` are polygon vertices in canvas space; the
+    /// path is implicitly closed (last vertex back to the first). Fewer than
+    /// three vertices select nothing. Hard edge; anti-aliasing is deferred.
+    pub fn polygon(width: u32, height: u32, points: &[Point]) -> Self {
+        let mut mask = Self::new_empty(width, height);
+        let n = points.len();
+        if n < 3 {
+            return mask;
+        }
+        for y in 0..height {
+            let yc = y as f32 + 0.5;
+            // X coordinates where polygon edges cross this scanline.
+            let mut crossings: Vec<f32> = Vec::new();
+            for i in 0..n {
+                let a = points[i];
+                let b = points[(i + 1) % n];
+                // Half-open test avoids double-counting shared vertices.
+                if (a.y <= yc && b.y > yc) || (b.y <= yc && a.y > yc) {
+                    let t = (yc - a.y) / (b.y - a.y);
+                    crossings.push(a.x + t * (b.x - a.x));
+                }
+            }
+            crossings.sort_by(|p, q| p.partial_cmp(q).unwrap_or(std::cmp::Ordering::Equal));
+            // Fill spans between consecutive crossing pairs.
+            for pair in crossings.chunks_exact(2) {
+                let x_lo = (pair[0] - 0.5).ceil().max(0.0) as i64;
+                let x_hi = ((pair[1] - 0.5).ceil() as i64).min(width as i64);
+                for x in x_lo..x_hi {
+                    mask.set(x as u32, y, 255);
                 }
             }
         }
@@ -305,6 +346,41 @@ mod tests {
         let rect = SelectionMask::rectangle(10, 10, Rect::new(0, 0, 4, 4));
         let result = apply_mode(None, rect, SelectionMode::Subtract);
         assert_eq!(result.selected_count(), 100 - 16);
+    }
+
+    #[test]
+    fn polygon_fills_triangle_interior() {
+        // A right triangle with vertices (0,0), (10,0), (0,10).
+        let pts = [
+            Point::new(0.0, 0.0),
+            Point::new(10.0, 0.0),
+            Point::new(0.0, 10.0),
+        ];
+        let m = SelectionMask::polygon(12, 12, &pts);
+        assert_eq!(m.coverage(1, 1), 255); // inside
+        assert_eq!(m.coverage(8, 8), 0); // beyond the hypotenuse
+        assert!(m.selected_count() > 0);
+        assert!(m.selected_count() < 100);
+    }
+
+    #[test]
+    fn polygon_matches_rectangle_for_axis_aligned_box() {
+        let pts = [
+            Point::new(2.0, 2.0),
+            Point::new(6.0, 2.0),
+            Point::new(6.0, 6.0),
+            Point::new(2.0, 6.0),
+        ];
+        let poly = SelectionMask::polygon(10, 10, &pts);
+        let rect = SelectionMask::rectangle(10, 10, Rect::new(2, 2, 4, 4));
+        assert_eq!(poly.selected_count(), rect.selected_count());
+        assert_eq!(poly.data(), rect.data());
+    }
+
+    #[test]
+    fn polygon_with_too_few_points_selects_nothing() {
+        let pts = [Point::new(0.0, 0.0), Point::new(5.0, 5.0)];
+        assert!(SelectionMask::polygon(8, 8, &pts).is_empty());
     }
 
     #[test]
