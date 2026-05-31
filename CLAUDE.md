@@ -682,6 +682,18 @@ ADR-009: WASM selection API for M8 — 2026-05
             "no prior selection = everything selected" rule (spec §8.1) in one
             place. Modes and sample sources reuse the snake_case string
             convention from the tool options.
+
+ADR-010: Crop to selection clips outside pixels — 2026-05
+  Decision: CropToSelection resizes the canvas to the selection's bounding box
+            and crops every layer to it, discarding pixels outside the new
+            canvas. This diverges from spec §10.6 ("pixels outside selection are
+            not clipped (they remain but are outside the canvas)").
+  Rationale: This codebase enforces a hard invariant that every layer's buffer
+            is exactly canvas-sized (Document::layers, render::compose). Keeping
+            larger-than-canvas layer data would break that invariant across
+            compositing, codecs, and the .fln format. Off-canvas pixel retention
+            is a Phase 2 concern; undo restores the pre-crop state exactly, so no
+            data is lost from the user's perspective within a session.
 ```
 
 ---

@@ -20,7 +20,10 @@ pub use properties::{
 };
 pub use resize::{Anchor, ResizeCanvas};
 pub use selection::SetSelection;
-pub use transform::{CanvasRotation, FlipCanvas, LayerTransform, RotateCanvas, TransformLayer};
+pub use transform::{
+    CanvasRotation, CropToSelection, FlipCanvas, LayerTransform, RotateCanvas, RotateLayer90,
+    ScaleImage, TransformLayer,
+};
 
 use crate::document::Document;
 use crate::error::DocumentError;

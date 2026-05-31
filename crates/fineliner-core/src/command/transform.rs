@@ -9,10 +9,12 @@
 //! matches); the prior selection is restored on undo.
 
 use super::Command;
-use crate::document::{CanvasSize, Document};
+use crate::document::{CanvasSize, Document, ImageBuffer, Layer};
 use crate::error::DocumentError;
 use crate::selection::SelectionMask;
-use crate::transform::{flip_horizontal, flip_vertical, rotate_180, rotate_90_ccw, rotate_90_cw};
+use crate::transform::{
+    flip_horizontal, flip_vertical, rotate_180, rotate_90_ccw, rotate_90_cw, scale, Interpolation,
+};
 use std::any::Any;
 
 /// A dimension-preserving transform of a single layer (spec §10.2/§10.3).
@@ -224,10 +226,236 @@ impl Command for RotateCanvas {
     }
 }
 
+/// Full document state captured for reversing a lossy/structural transform.
+struct CanvasSnapshot {
+    layers: Vec<Layer>,
+    canvas: CanvasSize,
+    selection: Option<SelectionMask>,
+    active: usize,
+}
+
+/// Captures the current layers, canvas size, selection, and active index.
+fn snapshot(doc: &Document) -> CanvasSnapshot {
+    CanvasSnapshot {
+        layers: doc.layers().to_vec(),
+        canvas: doc.canvas,
+        selection: doc.selection.clone(),
+        active: doc.active_layer_index(),
+    }
+}
+
+/// Restores a previously captured document state.
+fn restore(doc: &mut Document, snap: CanvasSnapshot) -> Result<(), DocumentError> {
+    doc.layers = snap.layers;
+    doc.canvas = snap.canvas;
+    doc.selection = snap.selection;
+    doc.set_active_layer(snap.active)
+}
+
+/// Copies `src` into a fresh `w` × `h` buffer, centered (clipping any overflow).
+fn center_fit(src: &ImageBuffer, w: u32, h: u32) -> ImageBuffer {
+    let mut out = ImageBuffer::new_transparent(w, h);
+    let dx = (w as i32 - src.width() as i32) / 2;
+    let dy = (h as i32 - src.height() as i32) / 2;
+    for sy in 0..src.height() {
+        let ty = sy as i32 + dy;
+        if ty < 0 || ty >= h as i32 {
+            continue;
+        }
+        for sx in 0..src.width() {
+            let tx = sx as i32 + dx;
+            if tx < 0 || tx >= w as i32 {
+                continue;
+            }
+            if let Some(c) = src.get_pixel(sx, sy) {
+                out.set_pixel(tx as u32, ty as u32, c);
+            }
+        }
+    }
+    out
+}
+
+/// Scales the whole image (all layers) to a new size, resizing the canvas to
+/// match (spec §10.5). Resampling uses the chosen [`Interpolation`]. Lossy, so
+/// the prior state is snapshotted for undo; the selection is cleared.
+pub struct ScaleImage {
+    width: u32,
+    height: u32,
+    interp: Interpolation,
+    before: Option<CanvasSnapshot>,
+}
+
+impl ScaleImage {
+    /// Scales the image to `width` × `height` using `interp`.
+    pub fn new(width: u32, height: u32, interp: Interpolation) -> Self {
+        Self {
+            width,
+            height,
+            interp,
+            before: None,
+        }
+    }
+}
+
+impl Command for ScaleImage {
+    fn apply(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        let new_canvas = CanvasSize::new(self.width, self.height)?;
+        if self.before.is_none() {
+            self.before = Some(snapshot(doc));
+        }
+        for layer in &mut doc.layers {
+            layer.pixels = scale(&layer.pixels, self.width, self.height, self.interp);
+        }
+        doc.canvas = new_canvas;
+        doc.selection = None;
+        Ok(())
+    }
+
+    fn revert(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        let snap = self.before.take().ok_or(DocumentError::RegionOutOfBounds)?;
+        restore(doc, snap)
+    }
+
+    fn label(&self) -> &str {
+        "Scale Image"
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Crops the canvas to the bounding box of the current selection (spec §10.6).
+///
+/// Because every layer is canvas-sized in this model, pixels outside the new
+/// canvas are clipped (ADR-010). A no-op when there is no selection.
+pub struct CropToSelection {
+    before: Option<CanvasSnapshot>,
+}
+
+impl CropToSelection {
+    /// Creates the command.
+    pub fn new() -> Self {
+        Self { before: None }
+    }
+}
+
+impl Default for CropToSelection {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Command for CropToSelection {
+    fn apply(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        let Some(bbox) = doc.selection.as_ref().and_then(|s| s.bounding_box()) else {
+            return Ok(()); // nothing selected — nothing to crop to
+        };
+        let new_canvas = CanvasSize::new(bbox.w, bbox.h)?;
+        if self.before.is_none() {
+            self.before = Some(snapshot(doc));
+        }
+        for layer in &mut doc.layers {
+            layer.pixels = layer.pixels.copy_region(bbox)?;
+        }
+        doc.canvas = new_canvas;
+        doc.selection = None;
+        Ok(())
+    }
+
+    fn revert(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        match self.before.take() {
+            Some(snap) => restore(doc, snap),
+            None => Ok(()), // apply was a no-op
+        }
+    }
+
+    fn label(&self) -> &str {
+        "Crop to Selection"
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Rotates the active layer's content 90° (spec §10.3).
+///
+/// The rotated content is re-centered into the (unchanged) canvas, so the layer
+/// stays canvas-sized; on a non-square canvas the corners are clipped. The prior
+/// pixels are snapshotted for an exact undo.
+pub struct RotateLayer90 {
+    index: usize,
+    ccw: bool,
+    before: Option<ImageBuffer>,
+}
+
+impl RotateLayer90 {
+    /// Rotates the layer at `index` 90° clockwise (`ccw = false`) or CCW.
+    pub fn new(index: usize, ccw: bool) -> Self {
+        Self {
+            index,
+            ccw,
+            before: None,
+        }
+    }
+}
+
+impl Command for RotateLayer90 {
+    fn apply(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        let (cw, ch) = (doc.canvas.width(), doc.canvas.height());
+        let len = doc.layers.len();
+        let layer = doc
+            .layers
+            .get_mut(self.index)
+            .ok_or(DocumentError::LayerIndexOutOfBounds {
+                index: self.index,
+                len,
+            })?;
+        if self.before.is_none() {
+            self.before = Some(layer.pixels.clone());
+        }
+        let rotated = if self.ccw {
+            rotate_90_ccw(&layer.pixels)
+        } else {
+            rotate_90_cw(&layer.pixels)
+        };
+        layer.pixels = center_fit(&rotated, cw, ch);
+        Ok(())
+    }
+
+    fn revert(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        let prev = self.before.take().ok_or(DocumentError::RegionOutOfBounds)?;
+        let len = doc.layers.len();
+        let layer = doc
+            .layers
+            .get_mut(self.index)
+            .ok_or(DocumentError::LayerIndexOutOfBounds {
+                index: self.index,
+                len,
+            })?;
+        layer.pixels = prev;
+        Ok(())
+    }
+
+    fn label(&self) -> &str {
+        if self.ccw {
+            "Rotate Layer 90° CCW"
+        } else {
+            "Rotate Layer 90° CW"
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::color::Color;
+    use crate::geometry::Rect;
 
     fn doc_with_corner(w: u32, h: u32) -> Document {
         // A single bright pixel at the top-left corner marks orientation.
@@ -292,5 +520,59 @@ mod tests {
         assert!(doc.selection.is_none());
         cmd.revert(&mut doc).unwrap();
         assert!(doc.selection.is_some());
+    }
+
+    #[test]
+    fn scale_image_resizes_canvas_and_all_layers_and_round_trips() {
+        let mut doc = doc_with_corner(4, 4);
+        doc.add_layer("Top").unwrap();
+        let mut cmd = ScaleImage::new(8, 8, Interpolation::Nearest);
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!((doc.canvas.width(), doc.canvas.height()), (8, 8));
+        assert_eq!(doc.layers[0].pixels.width(), 8);
+        assert_eq!(doc.layers[1].pixels.width(), 8);
+        cmd.revert(&mut doc).unwrap();
+        assert_eq!((doc.canvas.width(), doc.canvas.height()), (4, 4));
+        assert_eq!(doc.layers[0].pixels.get_pixel(0, 0), Some(Color::WHITE));
+    }
+
+    #[test]
+    fn crop_to_selection_shrinks_canvas_to_bbox_and_round_trips() {
+        let mut doc = doc_with_corner(8, 8);
+        // Mark a pixel inside the future crop region so we can locate it after.
+        doc.layers[0].pixels.set_pixel(3, 3, Color::WHITE);
+        doc.selection = Some(SelectionMask::rectangle(8, 8, Rect::new(2, 2, 4, 4)));
+        let mut cmd = CropToSelection::new();
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!((doc.canvas.width(), doc.canvas.height()), (4, 4));
+        // Old (3,3) maps to (1,1) within the cropped canvas.
+        assert_eq!(doc.layers[0].pixels.get_pixel(1, 1), Some(Color::WHITE));
+        cmd.revert(&mut doc).unwrap();
+        assert_eq!((doc.canvas.width(), doc.canvas.height()), (8, 8));
+        assert_eq!(doc.layers[0].pixels.get_pixel(3, 3), Some(Color::WHITE));
+    }
+
+    #[test]
+    fn crop_to_selection_without_selection_is_noop() {
+        let mut doc = doc_with_corner(8, 8);
+        let mut cmd = CropToSelection::new();
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!((doc.canvas.width(), doc.canvas.height()), (8, 8));
+    }
+
+    #[test]
+    fn rotate_layer_90_keeps_canvas_size_and_round_trips() {
+        // Square canvas: the rotation is lossless and re-centering is a no-op.
+        let mut doc = doc_with_corner(4, 4);
+        let mut cmd = RotateLayer90::new(0, false);
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!(
+            (doc.layers[0].pixels.width(), doc.layers[0].pixels.height()),
+            (4, 4)
+        );
+        // CW rotation sends the top-left corner to the top-right.
+        assert_eq!(doc.layers[0].pixels.get_pixel(3, 0), Some(Color::WHITE));
+        cmd.revert(&mut doc).unwrap();
+        assert_eq!(doc.layers[0].pixels.get_pixel(0, 0), Some(Color::WHITE));
     }
 }
