@@ -48,6 +48,39 @@ pub fn compose(layers: &[Layer]) -> ImageBuffer {
     out
 }
 
+/// Composites visible layers over an opaque `background`, yielding a fully
+/// opaque buffer (used by Flatten Image, spec §5.2).
+///
+/// Equivalent to painting [`compose`] over a solid `background`; the result's
+/// alpha is always 255. The over-background blend is performed in linear light
+/// to match [`compose`]. The output size matches the first layer (0×0 if empty).
+pub fn compose_over(layers: &[Layer], background: Color) -> ImageBuffer {
+    let mut out = compose(layers);
+    let bg_lin = [
+        srgb_to_linear(background.r as f32 / 255.0),
+        srgb_to_linear(background.g as f32 / 255.0),
+        srgb_to_linear(background.b as f32 / 255.0),
+    ];
+    for y in 0..out.height() {
+        for x in 0..out.width() {
+            let s = out.get_pixel(x, y).unwrap_or(Color::TRANSPARENT);
+            let sa = s.a as f32 / 255.0;
+            let s_lin = [
+                srgb_to_linear(s.r as f32 / 255.0),
+                srgb_to_linear(s.g as f32 / 255.0),
+                srgb_to_linear(s.b as f32 / 255.0),
+            ];
+            let mut rgb = [0u8; 3];
+            for i in 0..3 {
+                let co = sa * s_lin[i] + (1.0 - sa) * bg_lin[i];
+                rgb[i] = (linear_to_srgb(co).clamp(0.0, 1.0) * 255.0).round() as u8;
+            }
+            out.set_pixel(x, y, Color::rgba(rgb[0], rgb[1], rgb[2], 255));
+        }
+    }
+    out
+}
+
 /// Blends one layer onto the accumulator `dst` in place.
 fn composite_layer(dst: &mut ImageBuffer, layer: &Layer) {
     let w = dst.width();
@@ -126,6 +159,21 @@ mod tests {
         let out = compose(&[]);
         assert_eq!(out.width(), 0);
         assert_eq!(out.height(), 0);
+    }
+
+    #[test]
+    fn compose_over_white_makes_result_opaque() {
+        // A fully transparent layer over white yields opaque white everywhere.
+        let layer = solid_layer(2, 2, Color::TRANSPARENT);
+        let out = compose_over(std::slice::from_ref(&layer), Color::WHITE);
+        assert_eq!(out.get_pixel(0, 0), Some(Color::WHITE));
+    }
+
+    #[test]
+    fn compose_over_opaque_layer_keeps_layer_color() {
+        let layer = solid_layer(1, 1, Color::rgba(10, 200, 30, 255));
+        let out = compose_over(std::slice::from_ref(&layer), Color::WHITE);
+        assert_eq!(out.get_pixel(0, 0), Some(Color::rgba(10, 200, 30, 255)));
     }
 
     #[test]

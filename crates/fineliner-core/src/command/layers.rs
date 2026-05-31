@@ -4,6 +4,7 @@ use super::Command;
 use crate::document::{Document, Layer};
 use crate::error::DocumentError;
 use std::any::Any;
+use uuid::Uuid;
 
 /// Inserts a new transparent layer at a given index.
 pub struct AddLayer {
@@ -137,6 +138,67 @@ impl Command for MoveLayer {
     }
 }
 
+/// Duplicates the layer at `index`, inserting the copy directly above it.
+///
+/// The copy is an independent layer (fresh id) with name `"<name> copy"`,
+/// preserving the original's pixels, opacity, blend mode, visibility, and lock.
+pub struct DuplicateLayer {
+    index: usize,
+    /// The inserted copy, captured on first apply so redo restores it exactly.
+    copy: Option<Layer>,
+    prev_active: usize,
+}
+
+impl DuplicateLayer {
+    /// Duplicates the layer at `index`.
+    pub fn at(index: usize) -> Self {
+        Self {
+            index,
+            copy: None,
+            prev_active: 0,
+        }
+    }
+}
+
+impl Command for DuplicateLayer {
+    fn apply(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        self.prev_active = doc.active_layer_index();
+        let copy = match self.copy.take() {
+            Some(l) => l,
+            None => {
+                let original =
+                    doc.layers()
+                        .get(self.index)
+                        .ok_or(DocumentError::LayerIndexOutOfBounds {
+                            index: self.index,
+                            len: doc.layer_count(),
+                        })?;
+                let mut copy = original.clone();
+                copy.id = Uuid::new_v4();
+                copy.name = format!("{} copy", original.name);
+                copy
+            }
+        };
+        let restored = copy.clone();
+        doc.insert_layer(self.index + 1, copy)?;
+        self.copy = Some(restored);
+        Ok(())
+    }
+
+    fn revert(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
+        doc.remove_layer(self.index + 1)?;
+        doc.set_active_layer(self.prev_active)
+    }
+
+    fn label(&self) -> &str {
+        "Duplicate Layer"
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,6 +236,34 @@ mod tests {
         assert_eq!(doc.layers[1].id, bottom_id);
         cmd.revert(&mut doc).unwrap();
         assert_eq!(doc.layers[0].id, bottom_id);
+    }
+
+    #[test]
+    fn duplicate_layer_inserts_independent_copy_above() {
+        let mut doc = Document::new(8, 8).unwrap();
+        doc.layers[0].name = "Base".to_string();
+        let original_id = doc.layers[0].id;
+        let mut cmd = DuplicateLayer::at(0);
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!(doc.layers.len(), 2);
+        // Copy sits directly above the original and is the active layer.
+        assert_eq!(doc.active_layer_index(), 1);
+        assert_eq!(doc.layers[1].name, "Base copy");
+        assert_ne!(doc.layers[1].id, original_id);
+        assert_eq!(doc.layers[0].id, original_id);
+    }
+
+    #[test]
+    fn duplicate_layer_round_trip_restores_active() {
+        let mut doc = Document::new(8, 8).unwrap();
+        doc.add_layer("Layer 2").unwrap();
+        doc.set_active_layer(0).unwrap();
+        let mut cmd = DuplicateLayer::at(1);
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!(doc.layers.len(), 3);
+        cmd.revert(&mut doc).unwrap();
+        assert_eq!(doc.layers.len(), 2);
+        assert_eq!(doc.active_layer_index(), 0);
     }
 
     #[test]

@@ -7,22 +7,28 @@
     exportPng,
     undo,
     redo,
+    selectAll,
+    deselect,
+    invertSelection,
   } from './lib/core/controller';
   import MainCanvas from './lib/components/canvas/MainCanvas.svelte';
   import ToolBar from './lib/components/toolbar/ToolBar.svelte';
   import ToolOptions from './lib/components/toolbar/ToolOptions.svelte';
   import ColorsPanel from './lib/components/panels/ColorsPanel.svelte';
+  import LayersPanel from './lib/components/panels/LayersPanel.svelte';
+  import TransformMenu from './lib/components/menus/TransformMenu.svelte';
 
   let fileInput: HTMLInputElement;
   let loadError = $state<string | null>(null);
 
-  // Single-key tool shortcuts (spec §9.2, §16.2).
+  // Single-key tool shortcuts (spec §9.2, §16.2). M and L cycle their pair.
   const toolShortcuts: Record<string, ToolKind> = {
     b: 'pencil',
     e: 'eraser',
     g: 'fill',
     i: 'eyedropper',
     v: 'move',
+    w: 'magic_wand',
   };
   const toolLabels: Record<ToolKind, string> = {
     pencil: 'Pencil',
@@ -30,6 +36,11 @@
     fill: 'Fill',
     eyedropper: 'Eyedropper',
     move: 'Move',
+    rect_select: 'Rectangle Select',
+    ellipse_select: 'Ellipse Select',
+    lasso: 'Lasso',
+    polygon_lasso: 'Polygonal Lasso',
+    magic_wand: 'Magic Wand',
   };
 
   onMount(() => {
@@ -57,18 +68,32 @@
       return;
     }
     const ctrl = e.ctrlKey || e.metaKey;
-    if (ctrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    const key = e.key.toLowerCase();
+    if (ctrl && key === 'z' && !e.shiftKey) {
       e.preventDefault();
       undo();
-    } else if (ctrl && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+    } else if (ctrl && (key === 'y' || (key === 'z' && e.shiftKey))) {
       e.preventDefault();
       redo();
-    } else if (!ctrl && e.key.toLowerCase() === 'x') {
+    } else if (ctrl && key === 'a') {
+      e.preventDefault();
+      selectAll();
+    } else if (ctrl && key === 'd') {
+      e.preventDefault();
+      deselect();
+    } else if (ctrl && e.shiftKey && key === 'i') {
+      e.preventDefault();
+      invertSelection();
+    } else if (!ctrl && key === 'x') {
       swapColors();
-    } else if (!ctrl && e.key.toLowerCase() === 'd') {
+    } else if (!ctrl && key === 'd') {
       resetColors();
-    } else if (!ctrl && toolShortcuts[e.key.toLowerCase()]) {
-      tool.kind = toolShortcuts[e.key.toLowerCase()];
+    } else if (!ctrl && key === 'm') {
+      tool.kind = tool.kind === 'rect_select' ? 'ellipse_select' : 'rect_select';
+    } else if (!ctrl && key === 'l') {
+      tool.kind = tool.kind === 'lasso' ? 'polygon_lasso' : 'lasso';
+    } else if (!ctrl && toolShortcuts[key]) {
+      tool.kind = toolShortcuts[key];
     }
   }
 </script>
@@ -103,6 +128,8 @@
     >
       Redo
     </button>
+    <div class="mx-2 h-5 w-px bg-[var(--fl-panel-border)]"></div>
+    <TransformMenu />
     <input
       bind:this={fileInput}
       type="file"
@@ -130,8 +157,9 @@
       </footer>
     </div>
 
-    <aside class="w-56 border-l border-[var(--fl-panel-border)] bg-[var(--fl-app-bg)]">
+    <aside class="flex w-56 flex-col border-l border-[var(--fl-panel-border)] bg-[var(--fl-app-bg)]">
       <ColorsPanel />
+      <LayersPanel />
     </aside>
   </div>
 </div>

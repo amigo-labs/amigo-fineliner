@@ -8,13 +8,27 @@ import initWasm, {
   composite,
   apply_command,
   pick_color,
+  set_active_layer,
+  get_layer_thumbnail,
   undo,
   redo,
   export_png,
   export_jpeg,
   export_webp,
   get_document_info,
+  get_selection_bounds,
+  get_selection_mask,
 } from '../wasm/pkg/fineliner_wasm.js';
+
+/** Per-layer state for the layers panel (spec §16.5). */
+export interface LayerInfo {
+  id: string;
+  name: string;
+  opacity: number;
+  blend_mode: BlendMode;
+  visible: boolean;
+  locked: boolean;
+}
 
 export interface DocumentInfo {
   width: number;
@@ -23,6 +37,10 @@ export interface DocumentInfo {
   active_layer: number;
   can_undo: boolean;
   can_redo: boolean;
+  /** Whether a selection is currently active. */
+  has_selection: boolean;
+  /** Layers ordered bottom (index 0) to top, matching core storage order. */
+  layers: LayerInfo[];
 }
 
 export type Rgba = [number, number, number, number];
@@ -32,6 +50,20 @@ export type BrushShape = 'hard_round' | 'soft_round' | 'flat';
 export type SampleSource = 'current_layer' | 'all_layers';
 /** Eraser behavior (spec §9.2 Eraser). */
 export type EraserMode = 'to_transparent' | 'to_background';
+/** Layer blend modes as stable snake_case strings (spec §6.1, 12 modes). */
+export type BlendMode =
+  | 'normal'
+  | 'multiply'
+  | 'screen'
+  | 'overlay'
+  | 'darken'
+  | 'lighten'
+  | 'color_dodge'
+  | 'color_burn'
+  | 'hard_light'
+  | 'soft_light'
+  | 'difference'
+  | 'exclusion';
 
 export interface PencilStrokeCommand {
   type: 'pencil_stroke';
@@ -78,12 +110,80 @@ export interface TranslateLayerCommand {
   dy: number;
 }
 
-/** Any command the tools emit to the core. */
+/** Layer-structure and -property commands (spec §5.2 / §7.3). */
+export type LayerCommand =
+  | { type: 'add_layer'; active: number }
+  | { type: 'remove_layer'; index: number }
+  | { type: 'duplicate_layer'; index: number }
+  | { type: 'rename_layer'; index: number; name: string }
+  | { type: 'set_layer_opacity'; index: number; opacity: number }
+  | { type: 'set_layer_blend_mode'; index: number; mode: BlendMode }
+  | { type: 'set_layer_visible'; index: number; visible: boolean }
+  | { type: 'set_layer_locked'; index: number; locked: boolean }
+  | { type: 'move_layer'; from: number; to: number }
+  | { type: 'merge_down'; index: number }
+  | { type: 'merge_visible' }
+  | { type: 'flatten_image' };
+
+/** How a drawn selection combines with the existing one (spec §8.2). */
+export type SelectionMode = 'replace' | 'add' | 'subtract' | 'intersect';
+
+/** Selection draws and modifiers (spec §8.3, §8.4 / §9.3). */
+export type SelectionCommand =
+  | { type: 'select_rectangle'; x: number; y: number; w: number; h: number; mode: SelectionMode; feather: number }
+  | { type: 'select_ellipse'; x: number; y: number; w: number; h: number; mode: SelectionMode; feather: number }
+  | { type: 'select_polygon'; points: Array<[number, number]>; mode: SelectionMode; feather: number }
+  | {
+      type: 'select_wand';
+      layer: number;
+      x: number;
+      y: number;
+      tolerance: number;
+      contiguous: boolean;
+      sample: SampleSource;
+      mode: SelectionMode;
+    }
+  | { type: 'select_all' }
+  | { type: 'deselect' }
+  | { type: 'invert_selection' }
+  | { type: 'expand_selection'; radius: number }
+  | { type: 'contract_selection'; radius: number }
+  | { type: 'feather_selection'; radius: number };
+
+/** Resampling quality for Scale Image (spec §10.5). */
+export type Interpolation = 'nearest' | 'bilinear' | 'bicubic';
+
+/** The 9-grid anchor for Resize Canvas (spec §10.4). */
+export type ResizeAnchor =
+  | 'top_left'
+  | 'top_center'
+  | 'top_right'
+  | 'center_left'
+  | 'center'
+  | 'center_right'
+  | 'bottom_left'
+  | 'bottom_center'
+  | 'bottom_right';
+
+/** Transform commands (spec §10). */
+export type TransformCommand =
+  | { type: 'transform_layer'; layer: number; op: 'flip_h' | 'flip_v' | 'rotate_180' }
+  | { type: 'rotate_layer_90'; layer: number; ccw: boolean }
+  | { type: 'flip_canvas'; horizontal: boolean }
+  | { type: 'rotate_canvas'; rotation: 'cw90' | 'ccw90' | 'rotate_180' }
+  | { type: 'scale_image'; width: number; height: number; interpolation: Interpolation }
+  | { type: 'resize_canvas'; width: number; height: number; anchor: ResizeAnchor }
+  | { type: 'crop_to_selection' };
+
+/** Any command emitted to the core. */
 export type ToolCommand =
   | PencilStrokeCommand
   | EraserStrokeCommand
   | FillBucketCommand
-  | TranslateLayerCommand;
+  | TranslateLayerCommand
+  | LayerCommand
+  | SelectionCommand
+  | TransformCommand;
 
 let initialized: Promise<unknown> | null = null;
 
@@ -105,6 +205,15 @@ export const core = {
   /** Samples a color; returns RGBA bytes, or an empty array if off-canvas. */
   pickColor: (handle: number, x: number, y: number, sample: SampleSource, size: number): Uint8Array =>
     pick_color(handle, x, y, sample, size),
+  /** Selects the active layer (UI state, not undoable). */
+  setActiveLayer: (handle: number, index: number): void => set_active_layer(handle, index),
+  /** Selection bounding box as [x, y, w, h], or an empty array if none. */
+  selectionBounds: (handle: number): number[] => Array.from(get_selection_bounds(handle)),
+  /** Selection coverage bytes (canvas-sized, row-major), or empty if none. */
+  selectionMask: (handle: number): Uint8ClampedArray => get_selection_mask(handle),
+  /** Returns a 32×32 RGBA8 thumbnail of the layer with the given id. */
+  layerThumbnail: (handle: number, layerId: string): Uint8ClampedArray =>
+    get_layer_thumbnail(handle, layerId),
   undo: (handle: number): boolean => undo(handle),
   redo: (handle: number): boolean => redo(handle),
   exportPng: (handle: number, compression: number): Uint8Array => export_png(handle, compression),

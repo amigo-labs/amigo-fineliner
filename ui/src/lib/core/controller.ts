@@ -7,6 +7,13 @@ import {
   type EraserStrokeCommand,
   type FillBucketCommand,
   type TranslateLayerCommand,
+  type LayerCommand,
+  type SelectionCommand,
+  type SelectionMode,
+  type TransformCommand,
+  type Interpolation,
+  type ResizeAnchor,
+  type BlendMode,
   type Rgba,
 } from './wasm';
 import { editor, tool } from '../stores/editor.svelte';
@@ -47,7 +54,239 @@ function syncInfo(): void {
   editor.activeLayer = info.active_layer;
   editor.canUndo = info.can_undo;
   editor.canRedo = info.can_redo;
+  editor.layers = info.layers;
+  editor.hasSelection = info.has_selection;
   editor.revision += 1;
+}
+
+/** Applies a layer command, then refreshes derived state. */
+function applyLayer(cmd: LayerCommand): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Adds a transparent layer above the active layer. */
+export function addLayer(): void {
+  applyLayer({ type: 'add_layer', active: editor.activeLayer });
+}
+
+/** Deletes the layer at `index` (blocked by the core if it is the last layer). */
+export function deleteLayer(index: number): void {
+  applyLayer({ type: 'remove_layer', index });
+}
+
+/** Duplicates the layer at `index`. */
+export function duplicateLayer(index: number): void {
+  applyLayer({ type: 'duplicate_layer', index });
+}
+
+/** Reorders the layer at `from` to position `to`. */
+export function reorderLayer(from: number, to: number): void {
+  if (from !== to) {
+    applyLayer({ type: 'move_layer', from, to });
+  }
+}
+
+/** Renames the layer at `index`. */
+export function renameLayer(index: number, name: string): void {
+  applyLayer({ type: 'rename_layer', index, name });
+}
+
+/** Sets the opacity (0–100 %) of the layer at `index`. */
+export function setLayerOpacity(index: number, percent: number): void {
+  const opacity = Math.min(1, Math.max(0, percent / 100));
+  applyLayer({ type: 'set_layer_opacity', index, opacity });
+}
+
+/** Sets the blend mode of the layer at `index`. */
+export function setLayerBlendMode(index: number, mode: BlendMode): void {
+  applyLayer({ type: 'set_layer_blend_mode', index, mode });
+}
+
+/** Shows or hides the layer at `index`. */
+export function setLayerVisible(index: number, visible: boolean): void {
+  applyLayer({ type: 'set_layer_visible', index, visible });
+}
+
+/** Locks or unlocks pixel edits on the layer at `index`. */
+export function setLayerLocked(index: number, locked: boolean): void {
+  applyLayer({ type: 'set_layer_locked', index, locked });
+}
+
+/** Merges the layer at `index` onto the layer below it. */
+export function mergeDown(index: number): void {
+  applyLayer({ type: 'merge_down', index });
+}
+
+/** Flattens all visible layers into one. */
+export function mergeVisible(): void {
+  applyLayer({ type: 'merge_visible' });
+}
+
+/** Flattens every layer onto an opaque white background. */
+export function flattenImage(): void {
+  applyLayer({ type: 'flatten_image' });
+}
+
+/** Selects the active layer (UI state; not an undoable command). */
+export function selectLayer(index: number): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.setActiveLayer(editor.handle, index);
+  syncInfo();
+}
+
+/** Returns a 32×32 RGBA8 thumbnail for the layer with `layerId`, or null.
+ *
+ * Returns null (rather than throwing) if the id no longer exists — a thumbnail
+ * component can still be mounted for a layer that was just deleted or reordered.
+ */
+export function layerThumbnail(layerId: string): Uint8ClampedArray | null {
+  if (editor.handle === null) {
+    return null;
+  }
+  try {
+    return core.layerThumbnail(editor.handle, layerId);
+  } catch {
+    return null;
+  }
+}
+
+/** Applies a selection command, then refreshes derived state. */
+function applySelection(cmd: SelectionCommand): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Selects a rectangle (canvas space) combined per `mode`. */
+export function selectRectangle(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  mode: SelectionMode,
+): void {
+  applySelection({ type: 'select_rectangle', x, y, w, h, mode, feather: tool.selectionFeather });
+}
+
+/** Selects an ellipse inscribed in the rectangle (canvas space), per `mode`. */
+export function selectEllipse(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  mode: SelectionMode,
+): void {
+  applySelection({ type: 'select_ellipse', x, y, w, h, mode, feather: tool.selectionFeather });
+}
+
+/** Selects a polygon over the given canvas-space points, per `mode`. */
+export function selectPolygon(points: Array<[number, number]>, mode: SelectionMode): void {
+  applySelection({ type: 'select_polygon', points, mode, feather: tool.selectionFeather });
+}
+
+/** Magic-wand selection seeded at the given canvas-space point, per `mode`. */
+export function selectWand(x: number, y: number, mode: SelectionMode): void {
+  applySelection({
+    type: 'select_wand',
+    layer: editor.activeLayer,
+    x,
+    y,
+    tolerance: tool.tolerance,
+    contiguous: tool.contiguous,
+    sample: tool.wandSample,
+    mode,
+  });
+}
+
+/** Selects the whole canvas (Ctrl+A). */
+export function selectAll(): void {
+  applySelection({ type: 'select_all' });
+}
+
+/** Clears the selection (Ctrl+D). */
+export function deselect(): void {
+  applySelection({ type: 'deselect' });
+}
+
+/** Inverts the selection (Ctrl+Shift+I). */
+export function invertSelection(): void {
+  applySelection({ type: 'invert_selection' });
+}
+
+/** Grows the selection by `radius` pixels. */
+export function expandSelection(radius: number): void {
+  applySelection({ type: 'expand_selection', radius });
+}
+
+/** Shrinks the selection by `radius` pixels. */
+export function contractSelection(radius: number): void {
+  applySelection({ type: 'contract_selection', radius });
+}
+
+/** Softens the selection edges by `radius` pixels. */
+export function featherSelection(radius: number): void {
+  applySelection({ type: 'feather_selection', radius });
+}
+
+/** The active selection's coverage mask (canvas-sized), or null if none. */
+export function selectionMask(): Uint8ClampedArray | null {
+  if (editor.handle === null) {
+    return null;
+  }
+  const mask = core.selectionMask(editor.handle);
+  return mask.length > 0 ? mask : null;
+}
+
+/** Applies a transform command, then refreshes derived state. */
+function applyTransform(cmd: TransformCommand): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Flips or 180°-rotates the active layer (spec §10.2/§10.3). */
+export function transformLayer(op: 'flip_h' | 'flip_v' | 'rotate_180'): void {
+  applyTransform({ type: 'transform_layer', layer: editor.activeLayer, op });
+}
+
+/** Rotates the active layer 90° (counter-clockwise when `ccw`). */
+export function rotateLayer90(ccw: boolean): void {
+  applyTransform({ type: 'rotate_layer_90', layer: editor.activeLayer, ccw });
+}
+
+/** Flips the whole canvas horizontally or vertically (spec §10.2). */
+export function flipCanvas(horizontal: boolean): void {
+  applyTransform({ type: 'flip_canvas', horizontal });
+}
+
+/** Rotates the whole canvas (spec §10.3). */
+export function rotateCanvas(rotation: 'cw90' | 'ccw90' | 'rotate_180'): void {
+  applyTransform({ type: 'rotate_canvas', rotation });
+}
+
+/** Scales the whole image to a new size (spec §10.5). */
+export function scaleImage(width: number, height: number, interpolation: Interpolation): void {
+  applyTransform({ type: 'scale_image', width, height, interpolation });
+}
+
+/** Resizes the canvas, anchoring existing content (spec §10.4). */
+export function resizeCanvas(width: number, height: number, anchor: ResizeAnchor): void {
+  applyTransform({ type: 'resize_canvas', width, height, anchor });
+}
+
+/** Crops the canvas to the current selection's bounding box (spec §10.6). */
+export function cropToSelection(): void {
+  applyTransform({ type: 'crop_to_selection' });
 }
 
 /** Creates a blank document and makes it the active one. */

@@ -21,6 +21,7 @@ use crate::color::Color;
 use crate::command::SetPixels;
 use crate::document::{Document, ImageBuffer};
 use crate::geometry::{Point, Rect};
+use crate::selection::SelectionMask;
 
 /// Brush tip shape (spec §9.2 Pencil "Brush shape").
 ///
@@ -39,6 +40,15 @@ pub enum BrushShape {
 
 /// Minor/major axis ratio of the [`BrushShape::Flat`] nib.
 const FLAT_ASPECT: f32 = 0.35;
+
+/// Immutable per-stroke context shared by every dab of one rasterization:
+/// the clamped target region, the stroke strength, and the active selection
+/// mask (if any). Bundled to keep the stamping helpers' signatures small.
+struct StrokeCtx<'a> {
+    region: Rect,
+    strength: f32,
+    selection: Option<&'a SelectionMask>,
+}
 
 /// A round/flat brush tip (spec §9.2 Pencil).
 #[derive(Debug, Clone, Copy)]
@@ -131,12 +141,19 @@ impl Brush {
         }
         let layer = doc.layers.get(layer_index)?;
         let region = self.stroke_region(points, doc.canvas.width(), doc.canvas.height())?;
+        // The active selection (if any) constrains where the stroke may write.
+        let selection = doc.selection.as_ref();
         let mut after = layer.pixels.copy_region(region).ok()?;
+        let ctx = StrokeCtx {
+            region,
+            strength,
+            selection,
+        };
         if points.len() == 1 {
-            self.stamp(&mut after, region, points[0], strength, &mut op);
+            self.stamp(&mut after, points[0], &ctx, &mut op);
         } else {
             for pair in points.windows(2) {
-                self.stamp_segment(&mut after, region, pair[0], pair[1], strength, &mut op);
+                self.stamp_segment(&mut after, pair[0], pair[1], &ctx, &mut op);
             }
         }
         Some((region, after))
@@ -169,17 +186,12 @@ impl Brush {
     }
 
     /// Stamps one dab centered at canvas-space `center` into `buf` (whose origin
-    /// is `region`'s top-left), applying `op` per covered pixel.
-    fn stamp<F>(
-        &self,
-        buf: &mut ImageBuffer,
-        region: Rect,
-        center: Point,
-        strength: f32,
-        op: &mut F,
-    ) where
+    /// is `ctx.region`'s top-left), applying `op` per covered pixel.
+    fn stamp<F>(&self, buf: &mut ImageBuffer, center: Point, ctx: &StrokeCtx, op: &mut F)
+    where
         F: FnMut(f32, Color) -> Color,
     {
+        let region = ctx.region;
         let radius = self.radius();
         let cx0 = (center.x - radius).floor() as i32;
         let cy0 = (center.y - radius).floor() as i32;
@@ -193,7 +205,7 @@ impl Brush {
                 if cov <= 0.0 {
                     continue;
                 }
-                let eff = (strength * cov).clamp(0.0, 1.0);
+                let mut eff = (ctx.strength * cov).clamp(0.0, 1.0);
                 if eff <= 0.0 {
                     continue;
                 }
@@ -201,6 +213,14 @@ impl Brush {
                 let ly = cy - region.y;
                 if lx < 0 || ly < 0 || lx >= region.w as i32 || ly >= region.h as i32 {
                     continue;
+                }
+                // Constrain to the active selection: scale by its coverage so an
+                // unselected pixel (0) is untouched and feathered edges blend.
+                if let Some(sel) = ctx.selection {
+                    eff *= sel.coverage(cx as u32, cy as u32) as f32 / 255.0;
+                    if eff <= 0.0 {
+                        continue;
+                    }
                 }
                 let dst = buf
                     .get_pixel(lx as u32, ly as u32)
@@ -214,10 +234,9 @@ impl Brush {
     fn stamp_segment<F>(
         &self,
         buf: &mut ImageBuffer,
-        region: Rect,
         a: Point,
         b: Point,
-        strength: f32,
+        ctx: &StrokeCtx,
         op: &mut F,
     ) where
         F: FnMut(f32, Color) -> Color,
@@ -227,13 +246,13 @@ impl Brush {
         let spacing = (self.size as f32 * 0.25).max(1.0);
         let steps = (dist / spacing).ceil() as i32;
         if steps == 0 {
-            self.stamp(buf, region, a, strength, op);
+            self.stamp(buf, a, ctx, op);
             return;
         }
         for i in 0..=steps {
             let t = i as f32 / steps as f32;
             let p = Point::new(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t);
-            self.stamp(buf, region, p, strength, op);
+            self.stamp(buf, p, ctx, op);
         }
     }
 }
@@ -388,6 +407,39 @@ mod tests {
         assert!(
             rim > 0 && rim < center,
             "rim alpha {rim} vs center {center}"
+        );
+    }
+
+    #[test]
+    fn stroke_outside_selection_writes_nothing() {
+        // Select only the left half; paint a dab centered in the right half.
+        let mut doc = Document::new(20, 20).unwrap();
+        doc.selection = Some(SelectionMask::rectangle(20, 20, Rect::new(0, 0, 10, 20)));
+        let result = black_pencil(6).stroke(0, &[Point::new(16.0, 10.0)], &doc);
+        // The dab lands entirely in the unselected half, so nothing is painted.
+        if let Some(mut cmd) = result {
+            cmd.apply(&mut doc).unwrap();
+        }
+        assert_eq!(
+            doc.layers[0].pixels.get_pixel(16, 10),
+            Some(Color::TRANSPARENT)
+        );
+    }
+
+    #[test]
+    fn stroke_straddling_selection_edge_writes_only_selected_side() {
+        // Selection covers x < 10. A wide dab on the boundary paints the left
+        // side but leaves the right side untouched.
+        let mut doc = Document::new(20, 20).unwrap();
+        doc.selection = Some(SelectionMask::rectangle(20, 20, Rect::new(0, 0, 10, 20)));
+        let mut cmd = black_pencil(12)
+            .stroke(0, &[Point::new(10.0, 10.0)], &doc)
+            .unwrap();
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!(doc.layers[0].pixels.get_pixel(7, 10), Some(Color::BLACK));
+        assert_eq!(
+            doc.layers[0].pixels.get_pixel(13, 10),
+            Some(Color::TRANSPARENT)
         );
     }
 

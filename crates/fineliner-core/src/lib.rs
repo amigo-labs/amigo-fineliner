@@ -16,11 +16,17 @@ pub mod document;
 pub mod error;
 pub mod geometry;
 pub mod render;
+pub mod selection;
 pub mod tools;
+pub mod transform;
 
 pub use color::{BlendMode, Color};
 pub use command::{
-    AddLayer, Command, CommandBus, MoveLayer, RemoveLayer, ResizeCanvas, SetPixels, UndoStack,
+    AddLayer, Anchor, CanvasRotation, Command, CommandBus, CropToSelection, DuplicateLayer,
+    FlattenImage, FlipCanvas, LayerTransform, MergeDown, MergeVisible, MoveLayer, RemoveLayer,
+    RenameLayer, ResizeCanvas, RotateCanvas, RotateLayer90, ScaleImage, SetLayerBlendMode,
+    SetLayerLocked, SetLayerOpacity, SetLayerVisible, SetPixels, SetSelection, TransformLayer,
+    UndoStack,
 };
 pub use document::{
     CanvasSize, ColorProfile, Document, DocumentMetadata, ImageBuffer, Layer, LayerKind,
@@ -28,8 +34,12 @@ pub use document::{
 };
 pub use error::DocumentError;
 pub use geometry::{Point, Rect, Size};
-pub use render::compose;
+pub use render::{compose, compose_over};
+pub use selection::{apply_mode, magic_wand, SelectionMask, SelectionMode};
 pub use tools::{
     Brush, BrushShape, Eraser, EraserMode, Eyedropper, Fill, FillOptions, Move, Pencil, SampleSize,
     SampleSource,
+};
+pub use transform::{
+    flip_horizontal, flip_vertical, rotate_180, rotate_90_ccw, rotate_90_cw, scale, Interpolation,
 };

@@ -1,5 +1,5 @@
 // Reactive editor state (Svelte 5 runes). One store per concern (CLAUDE.md §5.4).
-import type { BrushShape, EraserMode, SampleSource } from '../core/wasm';
+import type { BrushShape, EraserMode, LayerInfo, SampleSource } from '../core/wasm';
 
 /** The open document and its derived state. `handle` is the Rust-side index. */
 export const editor = $state({
@@ -9,12 +9,36 @@ export const editor = $state({
   activeLayer: 0,
   canUndo: false,
   canRedo: false,
-  /** Bumped after every mutation so the canvas knows to recomposite. */
+  /** Layers ordered bottom (index 0) to top, mirrored from the core. */
+  layers: [] as LayerInfo[],
+  /** Whether a selection is currently active (mirrored from the core). */
+  hasSelection: false,
+  /** Bumped after every mutation so the canvas and thumbnails refresh. */
   revision: 0,
 });
 
 /** The selectable tools (spec §9.2 / §16.2). */
-export type ToolKind = 'pencil' | 'eraser' | 'fill' | 'eyedropper' | 'move';
+export type ToolKind =
+  | 'pencil'
+  | 'eraser'
+  | 'fill'
+  | 'eyedropper'
+  | 'move'
+  | 'rect_select'
+  | 'ellipse_select'
+  | 'lasso'
+  | 'polygon_lasso'
+  | 'magic_wand';
+
+/** Shape of an in-progress selection gesture, drawn by the overlay (spec §8.5). */
+export type SelectionPreview = {
+  shape: 'rect' | 'ellipse' | 'lasso' | 'polygon';
+  /** Canvas-space points: two corners for rect/ellipse, a path otherwise. */
+  points: Array<[number, number]>;
+};
+
+/** The live selection gesture preview, or `null` when not selecting. */
+export const selectionPreview = $state({ value: null as SelectionPreview | null });
 
 /** Tool options across the M6 tool suite (spec §9.2, §16.3). */
 export const tool = $state({
@@ -40,6 +64,10 @@ export const tool = $state({
   eyedropperSample: 'all_layers' as SampleSource,
   /** Eyedropper averaging edge length (1/3/5/11/31). */
   sampleSize: 1,
+  /** Magic-wand color sample source. */
+  wandSample: 'current_layer' as SampleSource,
+  /** Feather radius (px) applied to rectangle/ellipse/lasso selections. */
+  selectionFeather: 0,
   /** Foreground color as #RRGGBB (spec §4.2 default black). */
   foreground: '#000000',
   /** Background color as #RRGGBB (spec §4.2 default white). */

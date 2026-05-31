@@ -5,12 +5,25 @@
 //! [`UndoStack`].
 
 mod layers;
+mod merge;
 mod pixels;
+mod properties;
 mod resize;
+mod selection;
+mod transform;
 
-pub use layers::{AddLayer, MoveLayer, RemoveLayer};
+pub use layers::{AddLayer, DuplicateLayer, MoveLayer, RemoveLayer};
+pub use merge::{FlattenImage, MergeDown, MergeVisible};
 pub use pixels::{PixelEdit, SetPixels};
-pub use resize::ResizeCanvas;
+pub use properties::{
+    RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
+};
+pub use resize::{Anchor, ResizeCanvas};
+pub use selection::SetSelection;
+pub use transform::{
+    CanvasRotation, CropToSelection, FlipCanvas, LayerTransform, RotateCanvas, RotateLayer90,
+    ScaleImage, TransformLayer,
+};
 
 use crate::document::Document;
 use crate::error::DocumentError;

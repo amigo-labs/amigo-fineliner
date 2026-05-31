@@ -4,6 +4,7 @@
   import { readComposite } from '../../core/controller';
   import { drawComposite } from '../../render/canvas2d';
   import { attachTools } from '../../tools/pointer';
+  import CanvasOverlay from './CanvasOverlay.svelte';
 
   let canvas: HTMLCanvasElement;
 
@@ -30,9 +31,14 @@
   {#if editor.handle === null}
     <p class="text-sm text-neutral-500">Open an image or create a new document to start.</p>
   {/if}
-  <canvas
-    bind:this={canvas}
-    class="max-h-full max-w-full touch-none shadow-2xl shadow-black/60"
-    style="image-rendering: pixelated; {editor.handle === null ? 'display:none' : ''}"
-  ></canvas>
+  <!-- The overlay is layered exactly over the main canvas; the wrapper shrinks
+       to the displayed canvas so `absolute inset-0` aligns the two. -->
+  <div class="relative" style={editor.handle === null ? 'display:none' : ''}>
+    <canvas
+      bind:this={canvas}
+      class="block max-h-full max-w-full touch-none shadow-2xl shadow-black/60"
+      style="image-rendering: pixelated;"
+    ></canvas>
+    <CanvasOverlay />
+  </div>
 </div>

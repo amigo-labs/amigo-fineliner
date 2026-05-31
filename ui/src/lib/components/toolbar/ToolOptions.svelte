@@ -1,10 +1,26 @@
 <script lang="ts">
   // Tool options bar (spec §16.3, §9.2). Controls shown depend on the active
   // tool. Bindings write straight into the tool store.
-  import { tool } from '../../stores/editor.svelte';
+  import { tool, editor, type ToolKind } from '../../stores/editor.svelte';
+  import {
+    deselect,
+    invertSelection,
+    expandSelection,
+    contractSelection,
+    featherSelection,
+  } from '../../core/controller';
 
   // Hardness only matters for soft/flat tips.
   const showHardness = $derived(tool.shape !== 'hard_round');
+
+  // Selection tools that draw a feather-able shape (not the wand).
+  const shapeSelectTools: ReadonlySet<ToolKind> = new Set([
+    'rect_select',
+    'ellipse_select',
+    'lasso',
+    'polygon_lasso',
+  ]);
+  const isShapeSelect = $derived(shapeSelectTools.has(tool.kind));
 </script>
 
 <div
@@ -95,5 +111,60 @@
     </label>
   {:else if tool.kind === 'move'}
     <span class="text-neutral-500">Drag to translate the active layer.</span>
+  {:else if isShapeSelect}
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Feather</span>
+      <input type="range" min="0" max="250" bind:value={tool.selectionFeather} class="w-28" />
+      <span class="w-10 tabular-nums text-neutral-300">{tool.selectionFeather}</span>
+    </label>
+    <span class="text-neutral-500">Shift = add · Alt = subtract · Shift+Alt = intersect</span>
+  {:else if tool.kind === 'magic_wand'}
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Tolerance</span>
+      <input type="range" min="0" max="255" bind:value={tool.tolerance} class="w-32" />
+      <span class="w-10 tabular-nums text-neutral-300">{tool.tolerance}</span>
+    </label>
+    <label class="flex items-center gap-2">
+      <input type="checkbox" bind:checked={tool.contiguous} />
+      <span class="text-neutral-400">Contiguous</span>
+    </label>
+    <label class="flex items-center gap-2">
+      <span class="text-neutral-400">Sample</span>
+      <select bind:value={tool.wandSample} class="rounded bg-neutral-800 px-2 py-1">
+        <option value="current_layer">Current Layer</option>
+        <option value="all_layers">All Layers</option>
+      </select>
+    </label>
+  {/if}
+
+  {#if isShapeSelect || tool.kind === 'magic_wand'}
+    <!-- Operations on the existing selection (spec §8.4). -->
+    <div class="ml-auto flex items-center gap-1.5 text-xs">
+      <button
+        class="rounded px-2 py-1 hover:bg-neutral-700 disabled:opacity-40"
+        disabled={!editor.hasSelection}
+        onclick={() => expandSelection(1)}>Expand</button
+      >
+      <button
+        class="rounded px-2 py-1 hover:bg-neutral-700 disabled:opacity-40"
+        disabled={!editor.hasSelection}
+        onclick={() => contractSelection(1)}>Contract</button
+      >
+      <button
+        class="rounded px-2 py-1 hover:bg-neutral-700 disabled:opacity-40"
+        disabled={!editor.hasSelection}
+        onclick={() => featherSelection(2)}>Feather</button
+      >
+      <button
+        class="rounded px-2 py-1 hover:bg-neutral-700 disabled:opacity-40"
+        disabled={!editor.hasSelection}
+        onclick={invertSelection}>Invert</button
+      >
+      <button
+        class="rounded px-2 py-1 hover:bg-neutral-700 disabled:opacity-40"
+        disabled={!editor.hasSelection}
+        onclick={deselect}>Deselect</button
+      >
+    </div>
   {/if}
 </div>

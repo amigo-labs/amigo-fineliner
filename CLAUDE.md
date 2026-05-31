@@ -649,6 +649,65 @@ ADR-007: WebP export is lossless in Phase 1 — 2026-05
   Rationale: Avoids a system dependency. Lossy WebP export is deferred; revisit
             if a pure-Rust lossy encoder becomes available. PNG/JPEG cover the
             lossy/lossless export needs for the M5 demo.
+
+ADR-008: WASM layer API for M7 — 2026-05
+  Decision: get_document_info gains a `layers` array (id, name, opacity,
+            blend_mode as snake_case string, visible, locked), ordered
+            bottom-to-top. Adds get_layer_thumbnail(handle, layer_id) returning
+            a 32×32 RGBA8 Uint8ClampedArray. apply_command's SerializedCommand
+            gains DuplicateLayer, RenameLayer, SetLayerOpacity,
+            SetLayerBlendMode, SetLayerVisible, SetLayerLocked, MergeDown,
+            MergeVisible, FlattenImage. Adds set_active_layer(handle, index) as
+            a non-undoable selection setter (layer selection is UI state, not a
+            command per spec §7.3).
+  Rationale: The layers panel (spec §16.5) needs per-layer state and thumbnails
+            (spec §5.3). get_layer_thumbnail is already named in the spec §17
+            API surface; the layer fields extend DocumentInfo rather than adding
+            a parallel call. Blend modes cross the JS boundary as stable
+            snake_case strings, matching the existing tool-option convention.
+
+ADR-009: WASM selection API for M8 — 2026-05
+  Decision: apply_command's SerializedCommand gains the selection draws
+            SelectRectangle / SelectEllipse / SelectPolygon / SelectWand (each
+            carrying a `mode` of replace/add/subtract/intersect, shapes also a
+            `feather` radius) and the modifiers SelectAll / Deselect /
+            InvertSelection / ExpandSelection / ContractSelection /
+            FeatherSelection. The mask is built and combined (apply_mode) in
+            Rust, then applied as one undoable SetSelection. get_document_info
+            gains `has_selection`. Adds get_selection_bounds(handle) → [x,y,w,h]
+            and get_selection_mask(handle) → coverage bytes for the overlay.
+  Rationale: Selection masks are canvas-sized and live in Rust (ADR-001); JS
+            sends gestures + mode and receives only bounds / coverage for the
+            marching-ants overlay (spec §8.5). Combining in Rust keeps the
+            "no prior selection = everything selected" rule (spec §8.1) in one
+            place. Modes and sample sources reuse the snake_case string
+            convention from the tool options.
+
+ADR-010: Crop to selection clips outside pixels — 2026-05
+  Decision: CropToSelection resizes the canvas to the selection's bounding box
+            and crops every layer to it, discarding pixels outside the new
+            canvas. This diverges from spec §10.6 ("pixels outside selection are
+            not clipped (they remain but are outside the canvas)").
+  Rationale: This codebase enforces a hard invariant that every layer's buffer
+            is exactly canvas-sized (Document::layers, render::compose). Keeping
+            larger-than-canvas layer data would break that invariant across
+            compositing, codecs, and the .fln format. Off-canvas pixel retention
+            is a Phase 2 concern; undo restores the pre-crop state exactly, so no
+            data is lost from the user's perspective within a session.
+
+ADR-011: WASM transform API for M9 — 2026-05
+  Decision: apply_command's SerializedCommand gains TransformLayer (op:
+            flip_h/flip_v/rotate_180), RotateLayer90 (ccw flag), FlipCanvas
+            (horizontal), RotateCanvas (rotation: cw90/ccw90/rotate_180),
+            ScaleImage (width/height/interpolation), ResizeCanvas
+            (width/height/anchor), and CropToSelection. Interpolation
+            (nearest/bilinear/bicubic) and the 9-grid anchor cross the JS
+            boundary as snake_case strings.
+  Rationale: Transforms are plain undoable commands; routing them through the
+            existing apply_command keeps one JS entry point and one undo path.
+            Strings for interpolation/anchor match the established tool-option
+            convention. ResizeCanvas existed in core since M2 but was not yet
+            reachable from JS; M9 exposes it with the new 9-grid anchor.
 ```
 
 ---

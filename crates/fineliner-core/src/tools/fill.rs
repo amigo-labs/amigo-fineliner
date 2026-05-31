@@ -179,16 +179,26 @@ impl Fill {
         );
 
         // Paint the fill color over the layer's existing pixels in the region.
+        // The active selection (if any) scales the write per pixel, so an
+        // unselected pixel is untouched and feathered edges blend.
+        let selection = doc.selection.as_ref();
         let mut after = layer.pixels.copy_region(region).ok()?;
         for y in min_y..=max_y {
             for x in min_x..=max_x {
                 if !mask[idx(x, y)] {
                     continue;
                 }
+                let eff = match selection {
+                    Some(sel) => ca * sel.coverage(x, y) as f32 / 255.0,
+                    None => ca,
+                };
+                if eff <= 0.0 {
+                    continue;
+                }
                 let lx = x - min_x;
                 let ly = y - min_y;
                 let dst = after.get_pixel(lx, ly).unwrap_or(Color::TRANSPARENT);
-                after.set_pixel(lx, ly, src_over(self.color, ca, dst));
+                after.set_pixel(lx, ly, src_over(self.color, eff, dst));
             }
         }
 
@@ -331,6 +341,29 @@ mod tests {
         cmd.revert(&mut doc).unwrap();
         assert_eq!(doc.layers[0].pixels.get_pixel(0, 0), Some(Color::WHITE));
         assert_eq!(doc.layers[0].pixels.get_pixel(1, 0), Some(Color::WHITE));
+    }
+
+    #[test]
+    fn fill_respects_active_selection() {
+        use crate::geometry::Rect;
+        use crate::selection::SelectionMask;
+        // All white; select only the left two pixels of a 4×1 canvas.
+        let mut doc = doc_with(4, 1, |b| {
+            for x in 0..4 {
+                b.set_pixel(x, 0, Color::WHITE);
+            }
+        });
+        doc.selection = Some(SelectionMask::rectangle(4, 1, Rect::new(0, 0, 2, 1)));
+        let mut cmd = red_fill(FillOptions::default())
+            .fill(0, Point::new(0.0, 0.0), &doc)
+            .unwrap();
+        cmd.apply(&mut doc).unwrap();
+        let red = Color::rgba(255, 0, 0, 255);
+        // Inside the selection the fill applies; outside it is left untouched.
+        assert_eq!(doc.layers[0].pixels.get_pixel(0, 0), Some(red));
+        assert_eq!(doc.layers[0].pixels.get_pixel(1, 0), Some(red));
+        assert_eq!(doc.layers[0].pixels.get_pixel(2, 0), Some(Color::WHITE));
+        assert_eq!(doc.layers[0].pixels.get_pixel(3, 0), Some(Color::WHITE));
     }
 
     #[test]

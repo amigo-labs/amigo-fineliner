@@ -68,10 +68,172 @@ UI-wiring task. Order:
 - **Not yet done by a human:** visual browser run of the new tools. To verify:
   `cd ui && pnpm dev`, then exercise Pencil/Eraser/Fill/Eyedropper/Move.
 
-## Next concrete task — M7 (layer system UI)
+## M7 — layer system UI (complete)
 
-Layer panel (add/delete/duplicate/reorder/visibility/lock/rename/opacity/blend),
-32×32 thumbnails, 999-layer cap, merge-visible / flatten. Spec §16 / M7.
+Milestone was L/XL; split into M tasks (core test-first, then WASM, then UI):
+
+- [x] **A — layer property + duplicate commands** (core, `command/properties.rs`,
+  `command/layers.rs`): `RenameLayer`, `SetLayerOpacity` (slider-drag merge via
+  `merge_with`), `SetLayerBlendMode`, `SetLayerVisible`, `SetLayerLocked`,
+  `DuplicateLayer`. Apply/revert round-trip tests. Spec §5.2 / §7.3.
+- [x] **B — merge / flatten commands** (core, `command/merge.rs` +
+  `render::compose_over`): `MergeDown`, `MergeVisible`, `FlattenImage` (onto
+  white). Snapshot-based undo; composite-preserving round-trip tests. Spec §5.2.
+- [x] **C — WASM bindings**: `CommandSpec` gained the layer commands +
+  `MoveLayer`; `get_document_info` now carries per-layer state (id/name/opacity/
+  blend_mode/visible/locked, bottom-to-top); added `get_layer_thumbnail` and the
+  non-undoable `set_active_layer` setter. ADR-008.
+- [x] **D — Layers panel UI** (`LayersPanel.svelte`, `LayerThumbnail.svelte`,
+  controller + store): row per layer (eye, lock, 32×32 thumbnail, name, blend
+  dropdown, opacity slider), add/delete/duplicate/merge-down/merge-visible/
+  flatten buttons, drag-to-reorder, double-click rename, click-to-select. §16.5.
+
+### Verification (M7)
+
+- `cargo test --workspace` green (118 core tests incl. 8 merge + 8 property/
+  duplicate); `cargo clippy --workspace --all-targets -- -D warnings` clean;
+  `cargo fmt --check` clean.
+- `wasm-pack build --target web --release` succeeds; new exports present
+  (`get_layer_thumbnail`, `set_active_layer`).
+- `pnpm check` (svelte-check 0 errors), `pnpm lint`, `pnpm build` all green.
+- **Not yet done by a human:** visual browser run of the layers panel. To
+  verify: `cd ui && pnpm dev`, then add/duplicate/reorder layers, toggle
+  visibility/lock, edit opacity/blend, rename, merge down / merge visible /
+  flatten, and confirm thumbnails update and undo/redo restores each step.
+
+## M8 — selection tools (complete)
+
+Milestone was XL; split into M tasks (core test-first, then WASM, then UI):
+
+- [x] **8A — selection mask foundation** (`selection/mod.rs`): `SelectionMask`
+  (single-channel coverage), `SelectionMode` (Replace/Add/Subtract/Intersect)
+  with `combine` + `apply_mode`, rectangle & ellipse rasterizers, `invert`,
+  `new_full`/`new_empty`, `selected_count`. `Document.selection` retyped from
+  `Option<ImageBuffer>` to `Option<SelectionMask>`. 12 tests. Spec §8.1–§8.4.
+- [x] **8B — magic wand, lasso, modifiers** (core): `selection::magic_wand`
+  (BFS flood, contiguous + global, tolerance, current-layer/composite sample);
+  `SelectionMask::polygon` (even-odd scanline) for Lasso / Polygonal Lasso;
+  `expand` / `contract` (separable square dilation/erosion) and `feather`
+  (triple box blur). 13 tests incl. wand contiguous vs global. Spec §8.4, §9.3.
+- [x] **8C — SetSelection command + mask constraint** (core): `SetSelection`
+  (lazy `before` capture, `replace`/`clear` + `with_label`); the brush
+  rasterizer (`StrokeCtx`) and Fill now scale each written pixel by the active
+  mask's coverage (None = fully selected). 6 tests (round-trip, stroke outside /
+  straddling selection, fill within selection). Spec §7.3.
+- [x] **8D — WASM bindings** (ADR-009): `CommandSpec` gains `SelectRectangle`/
+  `SelectEllipse`/`SelectPolygon` (mode + feather), `SelectWand` (layer, seed,
+  tolerance, contiguous, sample, mode), and the modifiers `SelectAll` /
+  `Deselect` / `InvertSelection` / `ExpandSelection` / `ContractSelection` /
+  `FeatherSelection`. Masks build + combine (`apply_mode`) in Rust → one
+  `SetSelection`. `get_document_info` gains `has_selection`; new
+  `get_selection_bounds` and `get_selection_mask` queries for the overlay.
+- [x] **8E — UI**: five selection `ToolKind`s with toolbar buttons + M/L/W
+  shortcuts (M/L cycle their pair); pointer gestures in `pointer.ts` (rubber-band
+  rect/ellipse with Shift = square/circle, freehand Lasso, click-to-place +
+  double-click/near-start close for Polygonal Lasso, click for Magic Wand);
+  Shift/Alt → add/subtract/intersect mode; `CanvasOverlay.svelte` marching-ants
+  overlay (animated dashed boundary traced from `get_selection_mask`, plus the
+  in-progress gesture); Ctrl+A/Ctrl+D/Ctrl+Shift+I and Expand/Contract/Feather/
+  Invert/Deselect buttons in the tool options bar.
+
+### Verification (M8 complete)
+
+- `cargo test --workspace` green (151 core tests); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+- `wasm-pack build --target web --release` succeeds; `pnpm check` (svelte-check
+  0 errors), `pnpm lint`, `pnpm build` all green.
+- **Not yet done by a human:** visual browser run of the selection tools and
+  marching-ants overlay. To verify: `cd ui && pnpm dev`, then draw rect/ellipse/
+  lasso/polygon/wand selections (with Shift/Alt for add/subtract/intersect),
+  confirm marching ants animate around the boundary and the in-progress shape,
+  paint/fill inside vs outside the selection, and exercise Ctrl+A / Ctrl+D /
+  Ctrl+Shift+I and the Expand/Contract/Feather buttons.
+
+### Known limitations / follow-ups
+
+- Marching ants stroke the mask's per-pixel boundary edges with an animated dash
+  offset (not a single traced contour); good enough for Phase 1, revisit for
+  large selections in the M16 performance pass.
+- Selection shapes are hard-edged in the rasterizer; the Lasso/Wand "anti-alias"
+  option (spec §9.3) and the rect/ellipse anti-aliased edges are deferred.
+- Overlay rebuilds the boundary path on every document mutation (O(canvas));
+  fine for Phase 1, a dirty-rect optimization belongs to M16.
+
+## M9 — transform tools (complete bar optional Free Transform)
+
+Milestone is XL; split into M tasks (core test-first, then commands, then UI):
+
+- [x] **9A — transform buffer primitives** (`transform/mod.rs`): `flip_horizontal`/
+  `flip_vertical`, `rotate_90_cw`/`rotate_90_ccw`/`rotate_180` (exact index
+  permutations), `Interpolation` (Nearest/Bilinear/Bicubic), and `scale` (per-
+  channel f32 sampling, Catmull-Rom bicubic). 12 tests (rotate 90×4 = identity,
+  flip twice = identity, scale ×2→×0.5 bicubic ≈ identity, nearest exact).
+- [x] **9B — discrete flip/rotate commands** (core, `command/transform.rs`):
+  `TransformLayer` (active-layer FlipHorizontal/FlipVertical/Rotate180,
+  dimension-preserving, self-inverse) and the canvas ops `FlipCanvas` +
+  `RotateCanvas` (Cw90/Ccw90/Rotate180, all layers; 90° swaps canvas dims;
+  selection cleared and restored on undo). All lossless → invertible by
+  re-application, no snapshot. 5 tests.
+- [x] **9C — scale / crop / resize-anchor / layer 90°** (core): `ResizeCanvas`
+  gained a 9-grid `Anchor` (default TopLeft); `ScaleImage` (all layers via
+  `transform::scale`, resizes canvas, snapshot undo); `CropToSelection` (canvas
+  ← selection bbox, layers cropped, snapshot undo, ADR-010 clips outside pixels);
+  `RotateLayer90` (rotate + center-fit into canvas dims, snapshot undo). 9 tests.
+- [ ] **9D — Free Transform math** (core, optional for Phase 1): compose
+  translate/scale/rotate into one affine applied to a layer with chosen
+  interpolation (spec §10.1 interactive). Can be deferred — the discrete
+  transforms + scale cover the M9 exit criteria; Free Transform is the
+  interactive handle UI's backing math.
+- [x] **9E — WASM bindings** (ADR-011): `apply_command`'s `CommandSpec` gained
+  `TransformLayer` (flip_h/flip_v/rotate_180), `RotateLayer90` (ccw),
+  `FlipCanvas` (horizontal), `RotateCanvas` (cw90/ccw90/rotate_180), `ScaleImage`
+  (width/height/interpolation), `ResizeCanvas` (width/height/anchor),
+  `CropToSelection`. Interpolation + anchor are snake_case strings.
+- [x] **9F — UI** (`menus/TransformMenu.svelte`, `dialogs/ResizeDialog.svelte`,
+  `dialogs/ScaleDialog.svelte`): header Image menu (Flip H/V, Rotate 90 CW/CCW,
+  Rotate 180, Resize Canvas…, Scale Image…, Crop to Selection) and Layer menu
+  (Flip H/V, Rotate 90 CW/CCW, Rotate 180); Resize dialog with a 9-grid anchor
+  picker; Scale dialog with constrain-proportions + interpolation. Controller +
+  `wasm.ts` `TransformCommand` union wired. Crop disabled without a selection.
+
+### Verification (9A–9C)
+
+- `cargo test --workspace` green (174 core tests); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+The transform core is complete enough for the M9 exit criteria: flips, rotate
+90/180 (layer + canvas), scale image (nearest/bilinear/bicubic), resize canvas
+(9-grid anchor), and crop to selection are all implemented and undoable. Only
+the WASM bindings and UI remain (plus optional interactive Free Transform).
+
+### Verification (M9)
+
+- `cargo test --workspace` green (174 core tests); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+- `wasm-pack build --target web --release` succeeds; `pnpm check` (svelte-check
+  0 errors/0 warnings), `pnpm build` green.
+- **Not yet done by a human:** visual browser run of the transform menus and
+  dialogs. To verify: `cd ui && pnpm dev`, then exercise Image/Layer flip and
+  rotate, Resize Canvas (try each anchor), Scale Image (each interpolation), and
+  Crop to Selection (with a selection active); confirm undo restores each.
+
+### Known limitations / follow-ups
+
+- **Free Transform (spec §10.1, task 9D)** — interactive translate/scale/rotate
+  handles (Ctrl+T) are not implemented. The discrete transforms + Scale dialog
+  cover the M9 exit criteria; the affine math + handle UI is a follow-up.
+- Arbitrary-angle canvas rotation (spec §10.3) is deferred with Free Transform.
+
+## Next concrete task — M10 (shapes + text)
+
+Shapes: Line, Rectangle, Rounded Rectangle, Ellipse, Polygon (N-sided) with
+Outline / Fill / Fill+Outline modes, stroke width + dash; Text tool (font,
+size, bold/italic, color, anti-alias) rasterized on commit (ADR-003). Spec §11 /
+M10. Start with a core `shapes` rasterizer (test-first: outline pixel coverage,
+fill coverage) emitting `SetPixels`; text rasterization needs a font approach —
+check the spec for the chosen font stack before adding a dependency (stop-and-
+ask if a new font crate is required, per CLAUDE.md §9 / §12).
+
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
 modifier/cursor state.
