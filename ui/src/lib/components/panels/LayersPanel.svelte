@@ -84,7 +84,11 @@
         class:bg-neutral-700={i === editor.activeLayer}
         class:border-transparent={i !== editor.activeLayer}
         draggable="true"
-        ondragstart={() => (draggingIndex = i)}
+        ondragstart={(e) => {
+          draggingIndex = i;
+          // Firefox only starts a drag when dataTransfer carries data.
+          e.dataTransfer?.setData('text/plain', String(i));
+        }}
         ondragover={(e) => e.preventDefault()}
         ondrop={() => onDrop(i)}
       >

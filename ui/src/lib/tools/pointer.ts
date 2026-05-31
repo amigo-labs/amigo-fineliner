@@ -34,19 +34,19 @@ function selectionModeOf(e: PointerEvent): SelectionMode {
 /** Tools that drag out a selection shape (rubber band / freehand). */
 const DRAG_SELECT: ReadonlySet<ToolKind> = new Set(['rect_select', 'ellipse_select', 'lasso']);
 
-/** Normalizes two corners into a positive-size rect; `square` constrains 1:1. */
+/**
+ * Normalizes two corners into a positive-size rect.
+ *
+ * Shift is reserved for the selection combine mode (add), so rectangle/ellipse
+ * do not also constrain to a square on Shift — that would conflict with the
+ * documented modifier mapping (spec §8.2 vs §9.3).
+ */
 function rectFromCorners(
   a: [number, number],
   b: [number, number],
-  square: boolean,
 ): { x: number; y: number; w: number; h: number } {
-  let dx = b[0] - a[0];
-  let dy = b[1] - a[1];
-  if (square) {
-    const side = Math.max(Math.abs(dx), Math.abs(dy));
-    dx = Math.sign(dx || 1) * side;
-    dy = Math.sign(dy || 1) * side;
-  }
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
   const x = Math.round(Math.min(a[0], a[0] + dx));
   const y = Math.round(Math.min(a[1], a[1] + dy));
   return { x, y, w: Math.round(Math.abs(dx)), h: Math.round(Math.abs(dy)) };
@@ -219,7 +219,7 @@ export function attachTools(canvas: HTMLCanvasElement, redraw: () => void): () =
         }
         lassoPath = [];
       } else {
-        const r = rectFromCorners(start, last, e.shiftKey);
+        const r = rectFromCorners(start, last);
         if (r.w > 0 && r.h > 0) {
           if (tool.kind === 'ellipse_select') {
             selectEllipse(r.x, r.y, r.w, r.h, selMode);

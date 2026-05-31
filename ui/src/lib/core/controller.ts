@@ -140,12 +140,20 @@ export function selectLayer(index: number): void {
   syncInfo();
 }
 
-/** Returns a 32×32 RGBA8 thumbnail for the layer with `layerId`, or null. */
+/** Returns a 32×32 RGBA8 thumbnail for the layer with `layerId`, or null.
+ *
+ * Returns null (rather than throwing) if the id no longer exists — a thumbnail
+ * component can still be mounted for a layer that was just deleted or reordered.
+ */
 export function layerThumbnail(layerId: string): Uint8ClampedArray | null {
   if (editor.handle === null) {
     return null;
   }
-  return core.layerThumbnail(editor.handle, layerId);
+  try {
+    return core.layerThumbnail(editor.handle, layerId);
+  } catch {
+    return null;
+  }
 }
 
 /** Applies a selection command, then refreshes derived state. */
