@@ -694,6 +694,20 @@ ADR-010: Crop to selection clips outside pixels — 2026-05
             compositing, codecs, and the .fln format. Off-canvas pixel retention
             is a Phase 2 concern; undo restores the pre-crop state exactly, so no
             data is lost from the user's perspective within a session.
+
+ADR-011: WASM transform API for M9 — 2026-05
+  Decision: apply_command's SerializedCommand gains TransformLayer (op:
+            flip_h/flip_v/rotate_180), RotateLayer90 (ccw flag), FlipCanvas
+            (horizontal), RotateCanvas (rotation: cw90/ccw90/rotate_180),
+            ScaleImage (width/height/interpolation), ResizeCanvas
+            (width/height/anchor), and CropToSelection. Interpolation
+            (nearest/bilinear/bicubic) and the 9-grid anchor cross the JS
+            boundary as snake_case strings.
+  Rationale: Transforms are plain undoable commands; routing them through the
+            existing apply_command keeps one JS entry point and one undo path.
+            Strings for interpolation/anchor match the established tool-option
+            convention. ResizeCanvas existed in core since M2 but was not yet
+            reachable from JS; M9 exposes it with the new 9-grid anchor.
 ```
 
 ---

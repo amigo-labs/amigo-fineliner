@@ -6,14 +6,15 @@
 
 use fineliner_core::codec::{to_jpeg_bytes, to_png_bytes, to_webp_bytes};
 use fineliner_core::command::{
-    AddLayer, CommandBus, DuplicateLayer, FlattenImage, MergeDown, MergeVisible, MoveLayer,
-    RemoveLayer, RenameLayer, SetLayerBlendMode, SetLayerLocked, SetLayerOpacity, SetLayerVisible,
-    SetSelection,
+    AddLayer, Anchor, CanvasRotation, CommandBus, CropToSelection, DuplicateLayer, FlattenImage,
+    FlipCanvas, LayerTransform, MergeDown, MergeVisible, MoveLayer, RemoveLayer, RenameLayer,
+    ResizeCanvas, RotateCanvas, RotateLayer90, ScaleImage, SetLayerBlendMode, SetLayerLocked,
+    SetLayerOpacity, SetLayerVisible, SetSelection, TransformLayer,
 };
 use fineliner_core::{
     apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, Document, Eraser,
-    EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Move, Pencil, Point, Rect, SampleSize,
-    SampleSource, SelectionMask, SelectionMode,
+    EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil, Point,
+    Rect, SampleSize, SampleSource, SelectionMask, SelectionMode,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -125,6 +126,16 @@ fn default_selection_mode() -> String {
     "replace".to_string()
 }
 
+/// Default resampling when JS omits it.
+fn default_interpolation() -> String {
+    "bilinear".to_string()
+}
+
+/// Default resize anchor when JS omits it.
+fn default_anchor() -> String {
+    "top_left".to_string()
+}
+
 /// Maps a brush-shape string to a [`BrushShape`], defaulting to hard round.
 fn parse_shape(s: &str) -> BrushShape {
     match s {
@@ -209,6 +220,30 @@ fn parse_selection_mode(s: &str) -> SelectionMode {
         "subtract" => SelectionMode::Subtract,
         "intersect" => SelectionMode::Intersect,
         _ => SelectionMode::Replace,
+    }
+}
+
+/// Maps an interpolation string to an [`Interpolation`], defaulting to bilinear.
+fn parse_interpolation(s: &str) -> Interpolation {
+    match s {
+        "nearest" => Interpolation::Nearest,
+        "bicubic" => Interpolation::Bicubic,
+        _ => Interpolation::Bilinear,
+    }
+}
+
+/// Maps a 9-grid anchor string to an [`Anchor`], defaulting to top-left.
+fn parse_anchor(s: &str) -> Anchor {
+    match s {
+        "top_center" => Anchor::TopCenter,
+        "top_right" => Anchor::TopRight,
+        "center_left" => Anchor::CenterLeft,
+        "center" => Anchor::Center,
+        "center_right" => Anchor::CenterRight,
+        "bottom_left" => Anchor::BottomLeft,
+        "bottom_center" => Anchor::BottomCenter,
+        "bottom_right" => Anchor::BottomRight,
+        _ => Anchor::TopLeft,
     }
 }
 
@@ -358,6 +393,30 @@ enum CommandSpec {
     ContractSelection { radius: u32 },
     /// Soften the selection edges by `radius` pixels (spec §8.4 Feather).
     FeatherSelection { radius: u32 },
+    /// Flip or 180°-rotate the active layer (`op`: flip_h/flip_v/rotate_180).
+    TransformLayer { layer: usize, op: String },
+    /// Rotate the active layer 90° (counter-clockwise when `ccw`).
+    RotateLayer90 { layer: usize, ccw: bool },
+    /// Flip the whole canvas (all layers) horizontally or vertically.
+    FlipCanvas { horizontal: bool },
+    /// Rotate the whole canvas (`rotation`: cw90/ccw90/rotate_180).
+    RotateCanvas { rotation: String },
+    /// Scale the whole image to `width` × `height` with `interpolation`.
+    ScaleImage {
+        width: u32,
+        height: u32,
+        #[serde(default = "default_interpolation")]
+        interpolation: String,
+    },
+    /// Resize the canvas to `width` × `height`, placing content per `anchor`.
+    ResizeCanvas {
+        width: u32,
+        height: u32,
+        #[serde(default = "default_anchor")]
+        anchor: String,
+    },
+    /// Crop the canvas to the current selection's bounding box (spec §10.6).
+    CropToSelection,
 }
 
 /// Applies a JSON-encoded command to the document and records it in history.
@@ -573,6 +632,50 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
         CommandSpec::FeatherSelection { radius } => {
             modify_selection(bus, "Feather Selection", |m| m.feather(radius))
         }
+        CommandSpec::TransformLayer { layer, op } => {
+            let op = match op.as_str() {
+                "flip_v" => LayerTransform::FlipVertical,
+                "rotate_180" => LayerTransform::Rotate180,
+                _ => LayerTransform::FlipHorizontal,
+            };
+            bus.apply(Box::new(TransformLayer::new(layer, op)))
+                .map_err(to_js)
+        }
+        CommandSpec::RotateLayer90 { layer, ccw } => bus
+            .apply(Box::new(RotateLayer90::new(layer, ccw)))
+            .map_err(to_js),
+        CommandSpec::FlipCanvas { horizontal } => bus
+            .apply(Box::new(FlipCanvas::new(horizontal)))
+            .map_err(to_js),
+        CommandSpec::RotateCanvas { rotation } => {
+            let rot = match rotation.as_str() {
+                "ccw90" => CanvasRotation::Ccw90,
+                "rotate_180" => CanvasRotation::Rotate180,
+                _ => CanvasRotation::Cw90,
+            };
+            bus.apply(Box::new(RotateCanvas::new(rot))).map_err(to_js)
+        }
+        CommandSpec::ScaleImage {
+            width,
+            height,
+            interpolation,
+        } => bus
+            .apply(Box::new(ScaleImage::new(
+                width,
+                height,
+                parse_interpolation(&interpolation),
+            )))
+            .map_err(to_js),
+        CommandSpec::ResizeCanvas {
+            width,
+            height,
+            anchor,
+        } => bus
+            .apply(Box::new(
+                ResizeCanvas::new(width, height).with_anchor(parse_anchor(&anchor)),
+            ))
+            .map_err(to_js),
+        CommandSpec::CropToSelection => bus.apply(Box::new(CropToSelection::new())).map_err(to_js),
     })
 }
 
