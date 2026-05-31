@@ -724,6 +724,22 @@ ADR-012: Text uses ab_glyph; the caller supplies the font — 2026-05
             caller input preserves the "no platform deps" rule (§5.1) and lets
             the UI choose the face; real font-family selection is Phase 2
             (ADR-003 keeps Phase 1 text rasterized, single face).
+
+ADR-013: WASM shapes/text API for M10 — 2026-05
+  Decision: apply_command's CommandSpec gains DrawShape (shape discriminator
+            line/rectangle/rounded_rectangle/ellipse/polygon + geometry, mode,
+            stroke_width, stroke_color, fill_color, anti_alias, dash) and
+            DrawText (font_id, text, x, y, size, color, bold, italic,
+            anti_alias, align). A new register_font(bytes) -> u32 stores font
+            blobs in a thread-local registry; DrawText references the id. Shape
+            kind, mode, dash and text align cross the JS boundary as snake_case
+            strings.
+  Rationale: Shapes and text are plain undoable commands routed through the one
+            apply_command entry point and undo path. Fonts are registered once
+            and referenced by id rather than shipped through each JSON command
+            (font blobs are large); this matches ADR-012's caller-supplies-font
+            choice. Strings for kind/mode/dash/align follow the established
+            tool-option convention.
 ```
 
 ---
