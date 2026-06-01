@@ -112,7 +112,7 @@
       }
       path.closePath();
     } else if (kind === 'rounded_rectangle') {
-      const r = Math.min(16, w / 2, h / 2);
+      const r = Math.min(sp.cornerRadius, w / 2, h / 2);
       path.roundRect(x, y, w, h, r);
     } else {
       path.rect(x, y, w, h);

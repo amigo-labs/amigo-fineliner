@@ -59,6 +59,8 @@ export type ShapePreview = {
   b: [number, number];
   /** Polygon side count, mirrored so the preview matches the committed shape. */
   sides: number;
+  /** Rounded-rectangle corner radius, mirrored so the preview matches commit. */
+  cornerRadius: number;
 };
 
 /** The live Shapes-tool preview, or `null` when not drawing a shape. */

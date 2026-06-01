@@ -61,14 +61,16 @@ impl Default for TextStyle {
 
 /// The Text tool — rasterizes `content` at `position` with `style` (spec §9.2).
 ///
-/// `position` is the top-left of the first line's em box; the first baseline
-/// sits `ascent` below it, and subsequent `\n`-separated lines advance by the
-/// font's line height.
+/// `position.y` is the top of the first line's em box (the first baseline sits
+/// `ascent` below it; later `\n`-separated lines advance by the font's line
+/// height). `position.x` is the per-line alignment anchor: the left edge for
+/// `TextAlign::Left`, the center for `Center`, the right edge for `Right`.
 #[derive(Debug, Clone)]
 pub struct Text {
     /// The text to rasterize (may contain `\n` line breaks).
     pub content: String,
-    /// Top-left placement point in canvas space.
+    /// Placement point: `y` is the top of the first line; `x` is the alignment
+    /// anchor per [`TextStyle::align`] (left edge / center / right edge).
     pub position: Point,
     /// Styling.
     pub style: TextStyle,

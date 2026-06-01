@@ -339,27 +339,42 @@ export function drawShape(a: [number, number], b: [number, number]): void {
 // concurrent text commits await a single load/registration.
 let fontLoad: Promise<number> | null = null;
 
-/** Loads and registers the bundled default font, returning its core id. */
+/** Loads and registers the bundled default font, returning its core id.
+ *
+ * The successful promise is cached so repeat commits reuse one registration; a
+ * failed load resets the cache so a later attempt can retry (offline/404). */
 async function ensureFont(): Promise<number> {
   if (!fontLoad) {
     fontLoad = (async () => {
       await initCore();
       const res = await fetch(`${import.meta.env.BASE_URL}fonts/LiberationSans-Regular.ttf`);
+      if (!res.ok) {
+        throw new Error(`font fetch failed: ${res.status}`);
+      }
       const bytes = new Uint8Array(await res.arrayBuffer());
       return core.registerFont(bytes);
-    })();
+    })().catch((err) => {
+      fontLoad = null; // allow a later commit to retry
+      throw err;
+    });
   }
   return fontLoad;
 }
 
 /** Rasterizes `text` at a canvas-space point with the active text style.
  *
- * Empty/whitespace text is a no-op. The font is loaded lazily on first use. */
+ * Empty/whitespace text is a no-op. The font is loaded lazily on first use; if
+ * it cannot be loaded the commit is silently skipped rather than rejecting. */
 export async function renderText(x: number, y: number, text: string): Promise<void> {
   if (editor.handle === null || text.trim().length === 0) {
     return;
   }
-  const fontId = await ensureFont();
+  let fontId: number;
+  try {
+    fontId = await ensureFont();
+  } catch {
+    return; // font unavailable — skip the commit
+  }
   if (editor.handle === null) {
     return; // document closed while the font was loading
   }

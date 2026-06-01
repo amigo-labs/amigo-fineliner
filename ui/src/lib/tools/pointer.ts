@@ -143,7 +143,13 @@ export function attachTools(
       start = point;
       last = point;
       canvas.setPointerCapture(e.pointerId);
-      shapePreview.value = { kind: tool.shapeKind, a: point, b: point, sides: tool.shapeSides };
+      shapePreview.value = {
+        kind: tool.shapeKind,
+        a: point,
+        b: point,
+        sides: tool.shapeSides,
+        cornerRadius: tool.cornerRadius,
+      };
       return;
     }
 
@@ -236,7 +242,13 @@ export function attachTools(
 
     if (tool.kind === 'shapes' && start) {
       const b = constrainShape(start, point, tool.shapeKind, e.shiftKey);
-      shapePreview.value = { kind: tool.shapeKind, a: start, b, sides: tool.shapeSides };
+      shapePreview.value = {
+        kind: tool.shapeKind,
+        a: start,
+        b,
+        sides: tool.shapeSides,
+        cornerRadius: tool.cornerRadius,
+      };
       last = b;
       return;
     }
@@ -283,13 +295,15 @@ export function attachTools(
     } else if (tool.kind === 'shapes' && start && last) {
       drawShape(start, last);
       redraw();
-      shapePreview.value = null;
     } else if (tool.kind === 'move' && start && last) {
       const dx = Math.round(last[0] - start[0]);
       const dy = Math.round(last[1] - start[1]);
       moveLayer(dx, dy);
       redraw();
     }
+    // Always clear the shape preview, even if the tool changed mid-drag, so a
+    // stale rubber-band can never stay on the overlay.
+    shapePreview.value = null;
     active = false;
     last = null;
     start = null;

@@ -44,7 +44,10 @@
     }
     textEntry = null; // clear first so a trailing blur does not double-commit
     if (entry.text.trim().length > 0) {
-      void renderText(entry.cx, entry.cy, entry.text).then(redraw);
+      // Swallow rejections (font load / WASM) so the event handler stays quiet.
+      void renderText(entry.cx, entry.cy, entry.text)
+        .then(redraw)
+        .catch(() => {});
     }
   }
 
