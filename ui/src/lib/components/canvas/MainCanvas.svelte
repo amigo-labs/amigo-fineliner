@@ -1,12 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { editor } from '../../stores/editor.svelte';
-  import { readComposite } from '../../core/controller';
+  import { editor, tool } from '../../stores/editor.svelte';
+  import { readComposite, renderText } from '../../core/controller';
   import { drawComposite } from '../../render/canvas2d';
   import { attachTools } from '../../tools/pointer';
   import CanvasOverlay from './CanvasOverlay.svelte';
 
   let canvas: HTMLCanvasElement;
+
+  // In-progress text entry (Text tool). `cx`/`cy` are canvas-space; `left`/`top`
+  // position the floating textarea over the click in display pixels (spec §9.2).
+  let textEntry = $state<{ cx: number; cy: number; left: number; top: number; text: string } | null>(
+    null,
+  );
 
   function redraw(): void {
     if (!canvas || editor.handle === null) {
@@ -18,7 +24,48 @@
     }
   }
 
-  onMount(() => attachTools(canvas, redraw));
+  /** Display pixels per canvas pixel (the canvas is shown scaled to fit). */
+  function displayScale(): number {
+    return canvas && editor.width > 0 ? canvas.clientWidth / editor.width : 1;
+  }
+
+  /** Opens a text-entry box at a click, committing any prior entry first. */
+  function placeText(cx: number, cy: number, e: PointerEvent): void {
+    commitText();
+    const rect = canvas.getBoundingClientRect();
+    textEntry = { cx, cy, left: e.clientX - rect.left, top: e.clientY - rect.top, text: '' };
+  }
+
+  /** Rasterizes the current entry to pixels (no-op if empty), then clears it. */
+  function commitText(): void {
+    const entry = textEntry;
+    if (!entry) {
+      return;
+    }
+    textEntry = null; // clear first so a trailing blur does not double-commit
+    if (entry.text.trim().length > 0) {
+      // Swallow rejections (font load / WASM) so the event handler stays quiet.
+      void renderText(entry.cx, entry.cy, entry.text)
+        .then(redraw)
+        .catch(() => {});
+    }
+  }
+
+  function onEntryKeydown(e: KeyboardEvent): void {
+    // Esc or Ctrl/Cmd+Enter commit; plain Enter inserts a newline (spec §9.2).
+    if (e.key === 'Escape' || (e.key === 'Enter' && (e.ctrlKey || e.metaKey))) {
+      e.preventDefault();
+      e.stopPropagation();
+      commitText();
+    }
+  }
+
+  /** Focuses the textarea when it mounts. */
+  function autofocus(node: HTMLTextAreaElement): void {
+    node.focus();
+  }
+
+  onMount(() => attachTools(canvas, redraw, placeText));
 
   // Recompose whenever the document mutates.
   $effect(() => {
@@ -40,5 +87,19 @@
       style="image-rendering: pixelated;"
     ></canvas>
     <CanvasOverlay />
+    {#if textEntry}
+      <textarea
+        use:autofocus
+        bind:value={textEntry.text}
+        onkeydown={onEntryKeydown}
+        onblur={commitText}
+        spellcheck="false"
+        class="absolute z-10 resize-none overflow-hidden whitespace-pre rounded border border-dashed border-[var(--fl-accent)] bg-transparent p-0 leading-none outline-none"
+        style="left: {textEntry.left}px; top: {textEntry.top}px; font-size: {tool.fontSize *
+          displayScale()}px; color: {tool.foreground}; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: {tool.textBold
+          ? 'bold'
+          : 'normal'}; font-style: {tool.textItalic ? 'italic' : 'normal'}; min-width: 4ch;"
+      ></textarea>
+    {/if}
   </div>
 </div>

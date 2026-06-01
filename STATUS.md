@@ -224,15 +224,65 @@ the WASM bindings and UI remain (plus optional interactive Free Transform).
   cover the M9 exit criteria; the affine math + handle UI is a follow-up.
 - Arbitrary-angle canvas rotation (spec §10.3) is deferred with Free Transform.
 
-## Next concrete task — M10 (shapes + text)
+## M10 — shapes + text (complete)
 
-Shapes: Line, Rectangle, Rounded Rectangle, Ellipse, Polygon (N-sided) with
-Outline / Fill / Fill+Outline modes, stroke width + dash; Text tool (font,
-size, bold/italic, color, anti-alias) rasterized on commit (ADR-003). Spec §11 /
-M10. Start with a core `shapes` rasterizer (test-first: outline pixel coverage,
-fill coverage) emitting `SetPixels`; text rasterization needs a font approach —
-check the spec for the chosen font stack before adding a dependency (stop-and-
-ask if a new font crate is required, per CLAUDE.md §9 / §12).
+Milestone was XL; split into core → WASM → UI tasks. The font dependency was
+approved (ab_glyph) with the UI supplying font bytes (Option B), per ADR-012.
+
+- [x] **10A — shapes rasterizer** (core, `tools/shapes.rs`): `Shape` (Line,
+  Rectangle, RoundedRectangle, Ellipse, regular Polygon), `ShapeMode`
+  (Outline/Fill/FillAndOutline), `ShapeStyle` (stroke width/color, fill color,
+  anti-alias) and `Shapes::draw` → one `SetPixels`. SDF-based per-pixel coverage
+  unifies fill, centered stroke and AA; the active selection mask is honored.
+  Spec §9.2 Shapes.
+- [x] **10B — shapes WASM binding** (`apply_command` `DrawShape`): `shape`
+  discriminator + geometry (`points`/`center`/`radius`/`sides`/`rotation`/
+  `corner_radius`), `mode`, stroke width/color, fill color, `anti_alias`, `dash`.
+- [x] **10C — Shapes tool UI**: toolbar button + `U` shortcut, rubber-band drag
+  with Shift constrain, options bar (shape/mode/stroke/dash/sides/corner radius/
+  opacity/anti-alias), live overlay preview, `draw_shape` on pointer up.
+- [x] **10D — Text tool** (core `tools/text.rs` via ab_glyph, ADR-012): line
+  layout (kerning, L/C/R alignment), faux-bold/italic, AA, selection-masked,
+  one undoable `SetPixels`. WASM `register_font` + `DrawText`. UI Text tool
+  (`T`): floating text-entry box committed on Esc/Ctrl+Enter/blur, options bar
+  (size/bold/italic/align/anti-alias). Default font Liberation Sans (SIL OFL
+  1.1) shipped in `ui/public/fonts` and a core test fixture.
+- [x] **Dash patterns** (core + WASM + UI): solid/dashed/dotted outlines,
+  stepped along the perimeter polyline.
+
+### Verification (M10)
+
+- `cargo test --workspace` green (194 core tests incl. 13 shapes + 7 text);
+  `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo fmt
+  --check` clean; `cargo build -p fineliner-wasm --target
+  wasm32-unknown-unknown --release` succeeds.
+- `pnpm run wasm` (wasm-pack) + `svelte-check` (0 errors) + `vite build` succeed.
+- Node smoke tests through the real WASM boundary: a filled rectangle paints
+  4500 px (= 90×50); "Hello" text paints 898 px and undo clears to 0; dashed
+  (854) and dotted (769) outlines are sparser than solid (1268). This exercises
+  the M10 exit criteria (spec §16): all shape types render, text rasterizes,
+  text commit is undoable.
+- **Not yet done by a human:** visual browser run. `cd ui && pnpm dev`, then
+  draw each shape (Outline/Fill/Fill+Outline, dashes, Shift-constrain), and use
+  the Text tool (click, type, Esc to commit; try bold/italic/align/size).
+
+### Known limitations / follow-ups
+
+- **Arrow shape** (spec §9.2) is deferred — not in CLAUDE.md's M10 shape list.
+- Bold/italic are synthesized (faux); real font-family selection and multiple
+  faces are Phase 2 (ADR-003, ADR-012).
+- The text-entry overlay is a single textarea (foreground-colored live preview);
+  rich on-canvas caret/IME is a later polish item.
+- Dash stepping is O(pixels × on-segments); fine for Phase 1, an M16 concern.
+
+## Next concrete task — M11 (fineliner-effects crate)
+
+New crate `fineliner-effects` (independent of core, ADR-002): Blur (Gaussian,
+Box, Motion, Radial), Sharpen (Unsharp Mask, Convolution), Distort (Emboss, Edge
+Detect, Relief), Noise (Add/Reduce). Each effect: params struct, `apply()`,
+`preview()` (downscaled), Criterion bench, identity tests (σ=0, 1×1 kernel).
+This is a new crate + new public API surface — plan the task checklist before
+starting and stop at the crate-skeleton milestone for review (CLAUDE.md §3.3).
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer

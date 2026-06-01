@@ -18,6 +18,7 @@ import initWasm, {
   get_document_info,
   get_selection_bounds,
   get_selection_mask,
+  register_font,
 } from '../wasm/pkg/fineliner_wasm.js';
 
 /** Per-layer state for the layers panel (spec §16.5). */
@@ -175,6 +176,57 @@ export type TransformCommand =
   | { type: 'resize_canvas'; width: number; height: number; anchor: ResizeAnchor }
   | { type: 'crop_to_selection' };
 
+/** Geometric shape kinds the Shapes tool can draw (spec §9.2 Shapes). */
+export type ShapeKind = 'line' | 'rectangle' | 'rounded_rectangle' | 'ellipse' | 'polygon';
+
+/** How a shape's interior and border are painted (spec §9.2 Shapes). */
+export type ShapeMode = 'outline' | 'fill' | 'fill_and_outline';
+
+/** Outline dash pattern (spec §9.2 Shapes). */
+export type DashPattern = 'solid' | 'dashed' | 'dotted';
+
+/** Horizontal text alignment about the placement point (spec §9.2 Text). */
+export type TextAlign = 'left' | 'center' | 'right';
+
+/** Draw a geometric shape onto a layer (spec §9.2 Shapes).
+ *
+ * `points` carries `[a, b]` (endpoints or opposite corners) for line/rectangle/
+ * rounded_rectangle/ellipse; `polygon` uses `center`/`radius`/`sides`/`rotation`.
+ */
+export interface DrawShapeCommand {
+  type: 'draw_shape';
+  layer: number;
+  shape: ShapeKind;
+  points?: Array<[number, number]>;
+  corner_radius?: number;
+  center?: [number, number];
+  radius?: number;
+  sides?: number;
+  rotation?: number;
+  mode: ShapeMode;
+  stroke_width: number;
+  stroke_color: Rgba;
+  fill_color: Rgba;
+  anti_alias: boolean;
+  dash: DashPattern;
+}
+
+/** Rasterize text onto a layer using a `registerFont` id (spec §9.2 Text). */
+export interface DrawTextCommand {
+  type: 'draw_text';
+  layer: number;
+  font_id: number;
+  text: string;
+  x: number;
+  y: number;
+  size: number;
+  color: Rgba;
+  bold: boolean;
+  italic: boolean;
+  anti_alias: boolean;
+  align: TextAlign;
+}
+
 /** Any command emitted to the core. */
 export type ToolCommand =
   | PencilStrokeCommand
@@ -183,7 +235,9 @@ export type ToolCommand =
   | TranslateLayerCommand
   | LayerCommand
   | SelectionCommand
-  | TransformCommand;
+  | TransformCommand
+  | DrawShapeCommand
+  | DrawTextCommand;
 
 let initialized: Promise<unknown> | null = null;
 
@@ -220,4 +274,6 @@ export const core = {
   exportJpeg: (handle: number, quality: number): Uint8Array => export_jpeg(handle, quality),
   exportWebp: (handle: number): Uint8Array => export_webp(handle),
   documentInfo: (handle: number): DocumentInfo => get_document_info(handle) as DocumentInfo,
+  /** Registers a font's bytes and returns its id for `draw_text` commands. */
+  registerFont: (data: Uint8Array): number => register_font(data),
 };

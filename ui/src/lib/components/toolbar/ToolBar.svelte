@@ -21,6 +21,8 @@
     { kind: 'fill', icon: '🪣', label: 'Fill', key: 'G' },
     { kind: 'eyedropper', icon: '💉', label: 'Eyedropper', key: 'I' },
     { kind: 'move', icon: '✥', label: 'Move', key: 'V' },
+    { kind: 'shapes', icon: '⬚', label: 'Shapes', key: 'U' },
+    { kind: 'text', icon: 'T', label: 'Text', key: 'T' },
   ];
 </script>
 

@@ -15,6 +15,8 @@ import {
   type ResizeAnchor,
   type BlendMode,
   type Rgba,
+  type DrawShapeCommand,
+  type DrawTextCommand,
 } from './wasm';
 import { editor, tool } from '../stores/editor.svelte';
 
@@ -41,6 +43,12 @@ function opacity01(): number {
 function activeColor(useBackground: boolean): Rgba {
   const [r, g, b] = hexToRgb(useBackground ? tool.background : tool.foreground);
   return [r, g, b, 255];
+}
+
+/** A #RRGGBB color with the current tool opacity baked into its alpha. */
+function colorWithOpacity(hex: string): Rgba {
+  const [r, g, b] = hexToRgb(hex);
+  return [r, g, b, Math.round(opacity01() * 255)];
 }
 
 /** Refreshes derived document state from the core after a mutation. */
@@ -287,6 +295,105 @@ export function resizeCanvas(width: number, height: number, anchor: ResizeAnchor
 /** Crops the canvas to the current selection's bounding box (spec §10.6). */
 export function cropToSelection(): void {
   applyTransform({ type: 'crop_to_selection' });
+}
+
+/** Draws the active shape between two canvas-space points (spec §9.2 Shapes).
+ *
+ * `a`/`b` are the drag endpoints (line) or opposite corners of the drag box
+ * (rectangle/rounded/ellipse); a polygon is inscribed in that box. Stroke uses
+ * the foreground color, fill the background color, both at the tool opacity. */
+export function drawShape(a: [number, number], b: [number, number]): void {
+  if (editor.handle === null) {
+    return;
+  }
+  const cmd: DrawShapeCommand = {
+    type: 'draw_shape',
+    layer: editor.activeLayer,
+    shape: tool.shapeKind,
+    mode: tool.shapeMode,
+    stroke_width: tool.strokeWidth,
+    stroke_color: colorWithOpacity(tool.foreground),
+    fill_color: colorWithOpacity(tool.background),
+    anti_alias: tool.shapeAntiAlias,
+    dash: tool.shapeDash,
+  };
+  if (tool.shapeKind === 'polygon') {
+    const w = Math.abs(b[0] - a[0]);
+    const h = Math.abs(b[1] - a[1]);
+    cmd.center = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    cmd.radius = Math.min(w, h) / 2;
+    cmd.sides = tool.shapeSides;
+    cmd.rotation = 0;
+  } else {
+    cmd.points = [a, b];
+    if (tool.shapeKind === 'rounded_rectangle') {
+      cmd.corner_radius = tool.cornerRadius;
+    }
+  }
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+// The default font is fetched once and registered with the core (ADR-012,
+// Option B). `draw_text` references it by id. The promise is cached so
+// concurrent text commits await a single load/registration.
+let fontLoad: Promise<number> | null = null;
+
+/** Loads and registers the bundled default font, returning its core id.
+ *
+ * The successful promise is cached so repeat commits reuse one registration; a
+ * failed load resets the cache so a later attempt can retry (offline/404). */
+async function ensureFont(): Promise<number> {
+  if (!fontLoad) {
+    fontLoad = (async () => {
+      await initCore();
+      const res = await fetch(`${import.meta.env.BASE_URL}fonts/LiberationSans-Regular.ttf`);
+      if (!res.ok) {
+        throw new Error(`font fetch failed: ${res.status}`);
+      }
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      return core.registerFont(bytes);
+    })().catch((err) => {
+      fontLoad = null; // allow a later commit to retry
+      throw err;
+    });
+  }
+  return fontLoad;
+}
+
+/** Rasterizes `text` at a canvas-space point with the active text style.
+ *
+ * Empty/whitespace text is a no-op. The font is loaded lazily on first use; if
+ * it cannot be loaded the commit is silently skipped rather than rejecting. */
+export async function renderText(x: number, y: number, text: string): Promise<void> {
+  if (editor.handle === null || text.trim().length === 0) {
+    return;
+  }
+  let fontId: number;
+  try {
+    fontId = await ensureFont();
+  } catch {
+    return; // font unavailable — skip the commit
+  }
+  if (editor.handle === null) {
+    return; // document closed while the font was loading
+  }
+  const cmd: DrawTextCommand = {
+    type: 'draw_text',
+    layer: editor.activeLayer,
+    font_id: fontId,
+    text,
+    x,
+    y,
+    size: tool.fontSize,
+    color: colorWithOpacity(tool.foreground),
+    bold: tool.textBold,
+    italic: tool.textItalic,
+    anti_alias: tool.textAntiAlias,
+    align: tool.textAlign,
+  };
+  core.applyCommand(editor.handle, cmd);
+  syncInfo();
 }
 
 /** Creates a blank document and makes it the active one. */

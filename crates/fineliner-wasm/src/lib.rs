@@ -12,9 +12,10 @@ use fineliner_core::command::{
     SetLayerOpacity, SetLayerVisible, SetSelection, TransformLayer,
 };
 use fineliner_core::{
-    apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, Document, Eraser,
-    EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil, Point,
-    Rect, SampleSize, SampleSource, SelectionMask, SelectionMode,
+    apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, DashPattern, Document,
+    Eraser, EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil,
+    Point, Rect, SampleSize, SampleSource, SelectionMask, SelectionMode, Shape, ShapeMode,
+    ShapeStyle, Shapes, Text, TextAlign, TextStyle,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::RefCell;
@@ -24,12 +25,27 @@ use wasm_bindgen::Clamped;
 thread_local! {
     /// Open documents, indexed by handle. `None` slots are closed documents.
     static DOCUMENTS: RefCell<Vec<Option<CommandBus>>> = const { RefCell::new(Vec::new()) };
+    /// Registered font byte blobs, indexed by font id (see `register_font`).
+    /// The Text tool re-parses these per commit (ADR-012), so JS uploads each
+    /// face once and references it by id rather than passing bytes per command.
+    static FONTS: RefCell<Vec<Vec<u8>>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Installs a panic hook that logs Rust panics to the browser console.
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
+}
+
+/// Registers a TrueType/OpenType font and returns its id for use in `DrawText`
+/// commands (spec §9.2 Text; ADR-012, Option B — the caller supplies the font).
+#[wasm_bindgen]
+pub fn register_font(data: &[u8]) -> u32 {
+    FONTS.with(|fonts| {
+        let mut fonts = fonts.borrow_mut();
+        fonts.push(data.to_vec());
+        (fonts.len() - 1) as u32
+    })
 }
 
 /// Inserts a bus into the arena and returns its handle.
@@ -136,6 +152,35 @@ fn default_anchor() -> String {
     "top_left".to_string()
 }
 
+/// Default shape mode when JS omits it.
+fn default_shape_mode() -> String {
+    "outline".to_string()
+}
+
+/// Default shape stroke width when JS omits it.
+fn default_stroke_width() -> f32 {
+    1.0
+}
+
+/// Default text size (px) when JS omits it.
+fn default_text_size() -> f32 {
+    24.0
+}
+
+/// Default text alignment when JS omits it.
+fn default_text_align() -> String {
+    "left".to_string()
+}
+
+/// Maps a text-align string to a [`TextAlign`], defaulting to left.
+fn parse_text_align(s: &str) -> TextAlign {
+    match s {
+        "center" => TextAlign::Center,
+        "right" => TextAlign::Right,
+        _ => TextAlign::Left,
+    }
+}
+
 /// Maps a brush-shape string to a [`BrushShape`], defaulting to hard round.
 fn parse_shape(s: &str) -> BrushShape {
     match s {
@@ -220,6 +265,29 @@ fn parse_selection_mode(s: &str) -> SelectionMode {
         "subtract" => SelectionMode::Subtract,
         "intersect" => SelectionMode::Intersect,
         _ => SelectionMode::Replace,
+    }
+}
+
+/// Maps a shape-mode string to a [`ShapeMode`], defaulting to outline.
+fn parse_shape_mode(s: &str) -> ShapeMode {
+    match s {
+        "fill" => ShapeMode::Fill,
+        "fill_and_outline" => ShapeMode::FillAndOutline,
+        _ => ShapeMode::Outline,
+    }
+}
+
+/// Default shape dash pattern when JS omits it.
+fn default_dash() -> String {
+    "solid".to_string()
+}
+
+/// Maps a dash-pattern string to a [`DashPattern`], defaulting to solid.
+fn parse_dash(s: &str) -> DashPattern {
+    match s {
+        "dashed" => DashPattern::Dashed,
+        "dotted" => DashPattern::Dotted,
+        _ => DashPattern::Solid,
     }
 }
 
@@ -417,6 +485,61 @@ enum CommandSpec {
     },
     /// Crop the canvas to the current selection's bounding box (spec §10.6).
     CropToSelection,
+    /// Rasterize a shape onto `layer` (spec §9.2 Shapes).
+    ///
+    /// `shape` selects the geometry: `line`/`rectangle`/`rounded_rectangle`/
+    /// `ellipse` read `points` as `[a, b]` (endpoints or opposite corners);
+    /// `polygon` reads `center`, `radius`, `sides` and `rotation`. The
+    /// `corner_radius` applies to rounded rectangles only.
+    DrawShape {
+        layer: usize,
+        shape: String,
+        #[serde(default)]
+        points: Vec<[f32; 2]>,
+        #[serde(default)]
+        corner_radius: f32,
+        #[serde(default)]
+        center: [f32; 2],
+        #[serde(default)]
+        radius: f32,
+        #[serde(default)]
+        sides: u32,
+        #[serde(default)]
+        rotation: f32,
+        #[serde(default = "default_shape_mode")]
+        mode: String,
+        #[serde(default = "default_stroke_width")]
+        stroke_width: f32,
+        #[serde(default)]
+        stroke_color: [u8; 4],
+        #[serde(default)]
+        fill_color: [u8; 4],
+        #[serde(default)]
+        anti_alias: bool,
+        #[serde(default = "default_dash")]
+        dash: String,
+    },
+    /// Rasterize `text` onto `layer` at `(x, y)` using a `register_font` id
+    /// (spec §9.2 Text; ADR-012). A no-op if the font id or geometry is invalid.
+    DrawText {
+        layer: usize,
+        font_id: u32,
+        text: String,
+        x: f32,
+        y: f32,
+        #[serde(default = "default_text_size")]
+        size: f32,
+        #[serde(default)]
+        color: [u8; 4],
+        #[serde(default)]
+        bold: bool,
+        #[serde(default)]
+        italic: bool,
+        #[serde(default)]
+        anti_alias: bool,
+        #[serde(default = "default_text_align")]
+        align: String,
+    },
 }
 
 /// Applies a JSON-encoded command to the document and records it in history.
@@ -676,6 +799,98 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             ))
             .map_err(to_js),
         CommandSpec::CropToSelection => bus.apply(Box::new(CropToSelection::new())).map_err(to_js),
+        CommandSpec::DrawShape {
+            layer,
+            shape,
+            points,
+            corner_radius,
+            center,
+            radius,
+            sides,
+            rotation,
+            mode,
+            stroke_width,
+            stroke_color,
+            fill_color,
+            anti_alias,
+            dash,
+        } => {
+            let corner = |i: usize| points.get(i).map(|q| Point::new(q[0], q[1]));
+            // line / rectangle / rounded_rectangle / ellipse take `points[0..2]`.
+            let built = match shape.as_str() {
+                "line" => corner(0).zip(corner(1)).map(|(a, b)| Shape::Line { a, b }),
+                "rectangle" => corner(0)
+                    .zip(corner(1))
+                    .map(|(a, b)| Shape::Rectangle { a, b }),
+                "rounded_rectangle" => {
+                    corner(0)
+                        .zip(corner(1))
+                        .map(|(a, b)| Shape::RoundedRectangle {
+                            a,
+                            b,
+                            radius: corner_radius,
+                        })
+                }
+                "ellipse" => corner(0)
+                    .zip(corner(1))
+                    .map(|(a, b)| Shape::Ellipse { a, b }),
+                "polygon" => Some(Shape::Polygon {
+                    center: Point::new(center[0], center[1]),
+                    radius,
+                    sides,
+                    rotation,
+                }),
+                _ => None,
+            };
+            let style = ShapeStyle {
+                mode: parse_shape_mode(&mode),
+                stroke_width,
+                stroke_color: Color::rgba(
+                    stroke_color[0],
+                    stroke_color[1],
+                    stroke_color[2],
+                    stroke_color[3],
+                ),
+                fill_color: Color::rgba(fill_color[0], fill_color[1], fill_color[2], fill_color[3]),
+                anti_alias,
+                dash: parse_dash(&dash),
+            };
+            match built.and_then(|s| Shapes::new(s, style).draw(layer, &bus.document)) {
+                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                None => Ok(()), // invalid geometry or off-canvas — no-op
+            }
+        }
+        CommandSpec::DrawText {
+            layer,
+            font_id,
+            text,
+            x,
+            y,
+            size,
+            color,
+            bold,
+            italic,
+            anti_alias,
+            align,
+        } => {
+            let style = TextStyle {
+                size,
+                color: Color::rgba(color[0], color[1], color[2], color[3]),
+                bold,
+                italic,
+                anti_alias,
+                align: parse_text_align(&align),
+            };
+            let cmd = FONTS.with(|fonts| {
+                let fonts = fonts.borrow();
+                let bytes = fonts.get(font_id as usize)?;
+                Text::new(text, Point::new(x, y), style).render(layer, &bus.document, bytes)
+            });
+            match cmd {
+                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                None => Ok(()), // unknown font, empty text, or off-canvas — no-op
+            }
+        }
     })
 }
 

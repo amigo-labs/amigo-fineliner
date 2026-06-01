@@ -29,6 +29,8 @@
     i: 'eyedropper',
     v: 'move',
     w: 'magic_wand',
+    u: 'shapes',
+    t: 'text',
   };
   const toolLabels: Record<ToolKind, string> = {
     pencil: 'Pencil',
@@ -41,6 +43,8 @@
     lasso: 'Lasso',
     polygon_lasso: 'Polygonal Lasso',
     magic_wand: 'Magic Wand',
+    shapes: 'Shapes',
+    text: 'Text',
   };
 
   onMount(() => {
@@ -64,7 +68,8 @@
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    if (e.target instanceof HTMLInputElement) {
+    // Ignore shortcuts while typing in a field (text-entry overlay included).
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
       return;
     }
     const ctrl = e.ctrlKey || e.metaKey;
