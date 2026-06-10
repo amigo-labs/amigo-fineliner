@@ -551,8 +551,10 @@ export function redo(): void {
 /** Encoded-export formats (spec §13.2; WebP is lossless per ADR-007). */
 export type ExportFormat = 'png' | 'jpeg' | 'webp';
 
-/** Exports the composite in `format` and triggers a browser download. */
-export function exportImage(format: ExportFormat = 'png'): void {
+/** Exports the composite in `format` and triggers a browser download.
+ *
+ * `quality` (1–100) applies to JPEG only; PNG and WebP are lossless. */
+export function exportImage(format: ExportFormat = 'png', quality = 90): void {
   if (editor.handle === null) {
     return;
   }
@@ -560,7 +562,7 @@ export function exportImage(format: ExportFormat = 'png'): void {
   let mime: string;
   switch (format) {
     case 'jpeg':
-      bytes = core.exportJpeg(editor.handle, 90);
+      bytes = core.exportJpeg(editor.handle, Math.min(100, Math.max(1, Math.round(quality))));
       mime = 'image/jpeg';
       break;
     case 'webp':

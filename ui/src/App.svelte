@@ -18,20 +18,27 @@
   import ColorsPanel from './lib/components/panels/ColorsPanel.svelte';
   import LayersPanel from './lib/components/panels/LayersPanel.svelte';
   import TransformMenu from './lib/components/menus/TransformMenu.svelte';
+  import ExportDialog from './lib/components/dialogs/ExportDialog.svelte';
 
   let fileInput: HTMLInputElement;
   let loadError = $state<string | null>(null);
   let exportOpen = $state(false);
+  let jpegDialogOpen = $state(false);
 
   // Export formats (spec §13.2; WebP is lossless per ADR-007).
   const exportFormats: Array<{ format: ExportFormat; label: string }> = [
     { format: 'png', label: 'PNG' },
-    { format: 'jpeg', label: 'JPEG' },
+    { format: 'jpeg', label: 'JPEG…' },
     { format: 'webp', label: 'WebP (lossless)' },
   ];
 
   function runExport(format: ExportFormat): void {
     exportOpen = false;
+    // JPEG is lossy: ask for the quality first (spec §13.2).
+    if (format === 'jpeg') {
+      jpegDialogOpen = true;
+      return;
+    }
     exportImage(format);
   }
 
@@ -210,3 +217,13 @@
     </aside>
   </div>
 </div>
+
+{#if jpegDialogOpen}
+  <ExportDialog
+    onApply={(quality) => {
+      jpegDialogOpen = false;
+      exportImage('jpeg', quality);
+    }}
+    onClose={() => (jpegDialogOpen = false)}
+  />
+{/if}
