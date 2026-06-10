@@ -399,10 +399,13 @@ export async function renderText(x: number, y: number, text: string): Promise<vo
 /** Creates a blank document and makes it the active one. */
 export async function newDocument(width: number, height: number): Promise<void> {
   await initCore();
+  // Create the new document first; only replace (and close) the current one on
+  // success, so a failure leaves the open document untouched.
+  const handle = core.createDocument(width, height);
   if (editor.handle !== null) {
     core.closeDocument(editor.handle);
   }
-  editor.handle = core.createDocument(width, height);
+  editor.handle = handle;
   syncInfo();
 }
 
@@ -410,10 +413,13 @@ export async function newDocument(width: number, height: number): Promise<void> 
 export async function openFile(file: File): Promise<void> {
   await initCore();
   const bytes = new Uint8Array(await file.arrayBuffer());
+  // Decode before closing the current document: a corrupt file must not
+  // destroy the open document or leave `editor.handle` pointing at a closed slot.
+  const handle = core.openImage(bytes, file.type || 'image/png');
   if (editor.handle !== null) {
     core.closeDocument(editor.handle);
   }
-  editor.handle = core.openImage(bytes, file.type || 'image/png');
+  editor.handle = handle;
   syncInfo();
 }
 
