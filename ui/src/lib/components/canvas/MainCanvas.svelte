@@ -65,6 +65,12 @@
     node.focus();
   }
 
+  // The core anchors center/right-aligned text about `x` (tools/text.rs), so
+  // the preview box shifts by the same fraction of its own width.
+  const entryShift = $derived(
+    tool.textAlign === 'center' ? '-50%' : tool.textAlign === 'right' ? '-100%' : '0',
+  );
+
   onMount(() => attachTools(canvas, redraw, placeText));
 
   // Recompose whenever the document mutates.
@@ -95,7 +101,7 @@
         onblur={commitText}
         spellcheck="false"
         class="absolute z-10 resize-none overflow-hidden whitespace-pre rounded border border-dashed border-[var(--fl-accent)] bg-transparent p-0 leading-none outline-none"
-        style="left: {textEntry.left}px; top: {textEntry.top}px; font-size: {tool.fontSize *
+        style="left: {textEntry.left}px; top: {textEntry.top}px; transform: translateX({entryShift}); text-align: {tool.textAlign}; font-size: {tool.fontSize *
           displayScale()}px; color: {tool.foreground}; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: {tool.textBold
           ? 'bold'
           : 'normal'}; font-style: {tool.textItalic ? 'italic' : 'normal'}; min-width: 4ch;"
