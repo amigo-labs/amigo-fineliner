@@ -399,10 +399,13 @@ export async function renderText(x: number, y: number, text: string): Promise<vo
 /** Creates a blank document and makes it the active one. */
 export async function newDocument(width: number, height: number): Promise<void> {
   await initCore();
+  // Create the new document first; only replace (and close) the current one on
+  // success, so a failure leaves the open document untouched.
+  const handle = core.createDocument(width, height);
   if (editor.handle !== null) {
     core.closeDocument(editor.handle);
   }
-  editor.handle = core.createDocument(width, height);
+  editor.handle = handle;
   syncInfo();
 }
 
@@ -410,10 +413,13 @@ export async function newDocument(width: number, height: number): Promise<void> 
 export async function openFile(file: File): Promise<void> {
   await initCore();
   const bytes = new Uint8Array(await file.arrayBuffer());
+  // Decode before closing the current document: a corrupt file must not
+  // destroy the open document or leave `editor.handle` pointing at a closed slot.
+  const handle = core.openImage(bytes, file.type || 'image/png');
   if (editor.handle !== null) {
     core.closeDocument(editor.handle);
   }
-  editor.handle = core.openImage(bytes, file.type || 'image/png');
+  editor.handle = handle;
   syncInfo();
 }
 
@@ -542,18 +548,38 @@ export function redo(): void {
   }
 }
 
-/** Exports the composite as a PNG and triggers a browser download. */
-export function exportPng(): void {
+/** Encoded-export formats (spec §13.2; WebP is lossless per ADR-007). */
+export type ExportFormat = 'png' | 'jpeg' | 'webp';
+
+/** Exports the composite in `format` and triggers a browser download.
+ *
+ * `quality` (1–100) applies to JPEG only; PNG and WebP are lossless. */
+export function exportImage(format: ExportFormat = 'png', quality = 90): void {
   if (editor.handle === null) {
     return;
   }
-  const bytes = core.exportPng(editor.handle, 6);
+  let bytes: Uint8Array;
+  let mime: string;
+  switch (format) {
+    case 'jpeg':
+      bytes = core.exportJpeg(editor.handle, Math.min(100, Math.max(1, Math.round(quality))));
+      mime = 'image/jpeg';
+      break;
+    case 'webp':
+      bytes = core.exportWebp(editor.handle);
+      mime = 'image/webp';
+      break;
+    case 'png':
+      bytes = core.exportPng(editor.handle, 6);
+      mime = 'image/png';
+      break;
+  }
   // Copy into a fresh ArrayBuffer so the Blob owns standalone memory.
-  const blob = new Blob([bytes.slice()], { type: 'image/png' });
+  const blob = new Blob([bytes.slice()], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'fineliner-export.png';
+  a.download = `fineliner-export.${format === 'jpeg' ? 'jpg' : format}`;
   document.body.appendChild(a);
   a.click();
   // Defer cleanup so the browser has started the download (avoids a WebKit

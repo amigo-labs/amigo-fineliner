@@ -4,12 +4,13 @@
   import {
     newDocument,
     openFile,
-    exportPng,
+    exportImage,
     undo,
     redo,
     selectAll,
     deselect,
     invertSelection,
+    type ExportFormat,
   } from './lib/core/controller';
   import MainCanvas from './lib/components/canvas/MainCanvas.svelte';
   import ToolBar from './lib/components/toolbar/ToolBar.svelte';
@@ -17,9 +18,29 @@
   import ColorsPanel from './lib/components/panels/ColorsPanel.svelte';
   import LayersPanel from './lib/components/panels/LayersPanel.svelte';
   import TransformMenu from './lib/components/menus/TransformMenu.svelte';
+  import ExportDialog from './lib/components/dialogs/ExportDialog.svelte';
 
   let fileInput: HTMLInputElement;
   let loadError = $state<string | null>(null);
+  let exportOpen = $state(false);
+  let jpegDialogOpen = $state(false);
+
+  // Export formats (spec §13.2; WebP is lossless per ADR-007).
+  const exportFormats: Array<{ format: ExportFormat; label: string }> = [
+    { format: 'png', label: 'PNG' },
+    { format: 'jpeg', label: 'JPEG…' },
+    { format: 'webp', label: 'WebP (lossless)' },
+  ];
+
+  function runExport(format: ExportFormat): void {
+    exportOpen = false;
+    // JPEG is lossy: ask for the quality first (spec §13.2).
+    if (format === 'jpeg') {
+      jpegDialogOpen = true;
+      return;
+    }
+    exportImage(format);
+  }
 
   // Single-key tool shortcuts (spec §9.2, §16.2). M and L cycle their pair.
   const toolShortcuts: Record<string, ToolKind> = {
@@ -117,7 +138,35 @@
     <button class="rounded px-2 py-1 hover:bg-neutral-700" onclick={() => fileInput.click()}>
       Open…
     </button>
-    <button class="rounded px-2 py-1 hover:bg-neutral-700" onclick={exportPng}>Export PNG</button>
+    <div class="relative">
+      <button
+        class="rounded px-2 py-1 hover:bg-neutral-700"
+        class:bg-neutral-700={exportOpen}
+        onclick={() => (exportOpen = !exportOpen)}
+      >
+        Export…
+      </button>
+      {#if exportOpen}
+        <!-- Backdrop closes the menu on an outside click. -->
+        <button
+          class="fixed inset-0 z-40 cursor-default"
+          aria-label="Close menu"
+          onclick={() => (exportOpen = false)}
+        ></button>
+        <div
+          class="absolute left-0 top-8 z-50 w-40 rounded border border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] py-1 text-sm shadow-xl"
+        >
+          {#each exportFormats as f (f.format)}
+            <button
+              class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+              onclick={() => runExport(f.format)}
+            >
+              {f.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
     <div class="mx-2 h-5 w-px bg-[var(--fl-panel-border)]"></div>
     <button
       class="rounded px-2 py-1 hover:bg-neutral-700 disabled:opacity-40"
@@ -168,3 +217,13 @@
     </aside>
   </div>
 </div>
+
+{#if jpegDialogOpen}
+  <ExportDialog
+    onApply={(quality) => {
+      jpegDialogOpen = false;
+      exportImage('jpeg', quality);
+    }}
+    onClose={() => (jpegDialogOpen = false)}
+  />
+{/if}

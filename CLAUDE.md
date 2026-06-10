@@ -517,11 +517,12 @@ cd ui
 pnpm install
 pnpm dev                                      # Vite dev server (WASM hot-reload)
 pnpm build                                    # production bundle
-pnpm test                                     # Vitest unit tests
-pnpm test:e2e                                 # Playwright (Phase 3)
-pnpm lint
-pnpm check                                    # svelte-check TypeScript
+pnpm check                                    # WASM build + svelte-check TypeScript
+pnpm lint                                     # alias of `check` (no ESLint in Phase 1)
 ```
+
+`pnpm test` (Vitest) and `pnpm test:e2e` (Playwright) do not exist yet — UI
+tests are a Phase 3 item (§7.5).
 
 ### Tauri
 
@@ -543,7 +544,7 @@ wrangler pages deploy ui/dist                 # or via CI
 cargo fmt && \
 cargo clippy --workspace -- -D warnings && \
 cargo test --workspace && \
-cd ui && pnpm lint && pnpm check && pnpm test
+cd ui && pnpm check && pnpm build
 ```
 
 All steps must pass. Do not commit if any step fails.

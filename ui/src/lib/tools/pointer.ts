@@ -92,6 +92,9 @@ export function attachTools(
   onPlaceText?: (cx: number, cy: number, e: PointerEvent) => void,
 ): () => void {
   let active = false;
+  // The tool that started the drag: keyboard tool switches mid-drag must not
+  // change how the in-flight gesture is interpreted or committed.
+  let gestureKind: ToolKind = 'pencil';
   let last: [number, number] | null = null;
   let start: [number, number] | null = null;
   let useBackground = false;
@@ -140,6 +143,7 @@ export function attachTools(
 
     if (tool.kind === 'shapes') {
       active = true;
+      gestureKind = tool.kind;
       start = point;
       last = point;
       canvas.setPointerCapture(e.pointerId);
@@ -173,6 +177,7 @@ export function attachTools(
 
     if (DRAG_SELECT.has(tool.kind)) {
       active = true;
+      gestureKind = tool.kind;
       start = point;
       last = point;
       selMode = selectionModeOf(e);
@@ -188,6 +193,7 @@ export function attachTools(
     }
 
     active = true;
+    gestureKind = tool.kind;
     useBackground = e.button === 2;
     last = point;
     start = point;
@@ -228,19 +234,19 @@ export function attachTools(
       return;
     }
 
-    if (DRAG_SELECT.has(tool.kind) && start) {
-      if (tool.kind === 'lasso') {
+    if (DRAG_SELECT.has(gestureKind) && start) {
+      if (gestureKind === 'lasso') {
         lassoPath = [...lassoPath, point];
         selectionPreview.value = { shape: 'lasso', points: lassoPath };
       } else {
-        const shape = tool.kind === 'ellipse_select' ? 'ellipse' : 'rect';
+        const shape = gestureKind === 'ellipse_select' ? 'ellipse' : 'rect';
         selectionPreview.value = { shape, points: [start, point] };
       }
       last = point;
       return;
     }
 
-    if (tool.kind === 'shapes' && start) {
+    if (gestureKind === 'shapes' && start) {
       const b = constrainShape(start, point, tool.shapeKind, e.shiftKey);
       shapePreview.value = {
         kind: tool.shapeKind,
@@ -253,7 +259,7 @@ export function attachTools(
       return;
     }
 
-    switch (tool.kind) {
+    switch (gestureKind) {
       case 'pencil':
         paintStroke([last, point], strokeId, useBackground);
         redraw();
@@ -275,8 +281,8 @@ export function attachTools(
     if (!active) {
       return;
     }
-    if (DRAG_SELECT.has(tool.kind) && start && last) {
-      if (tool.kind === 'lasso') {
+    if (DRAG_SELECT.has(gestureKind) && start && last) {
+      if (gestureKind === 'lasso') {
         if (lassoPath.length >= 3) {
           selectPolygon(lassoPath, selMode);
         }
@@ -284,7 +290,7 @@ export function attachTools(
       } else {
         const r = rectFromCorners(start, last);
         if (r.w > 0 && r.h > 0) {
-          if (tool.kind === 'ellipse_select') {
+          if (gestureKind === 'ellipse_select') {
             selectEllipse(r.x, r.y, r.w, r.h, selMode);
           } else {
             selectRectangle(r.x, r.y, r.w, r.h, selMode);
@@ -292,10 +298,10 @@ export function attachTools(
         }
       }
       selectionPreview.value = null;
-    } else if (tool.kind === 'shapes' && start && last) {
+    } else if (gestureKind === 'shapes' && start && last) {
       drawShape(start, last);
       redraw();
-    } else if (tool.kind === 'move' && start && last) {
+    } else if (gestureKind === 'move' && start && last) {
       const dx = Math.round(last[0] - start[0]);
       const dy = Math.round(last[1] - start[1]);
       moveLayer(dx, dy);
@@ -307,6 +313,22 @@ export function attachTools(
     active = false;
     last = null;
     start = null;
+    if (canvas.hasPointerCapture(e.pointerId)) {
+      canvas.releasePointerCapture(e.pointerId);
+    }
+  };
+
+  // A cancelled pointer (touch scroll, palm rejection, window loss) abandons
+  // the in-flight gesture: commit-on-release gestures (selection/shape/move)
+  // are discarded and previews cleared. Pencil/Eraser paint incrementally, so
+  // pixels already applied stay — as a single undoable stroke (stroke_id).
+  const onCancel = (e: PointerEvent): void => {
+    active = false;
+    last = null;
+    start = null;
+    lassoPath = [];
+    selectionPreview.value = null;
+    shapePreview.value = null;
     if (canvas.hasPointerCapture(e.pointerId)) {
       canvas.releasePointerCapture(e.pointerId);
     }
@@ -325,7 +347,7 @@ export function attachTools(
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onUp);
-  canvas.addEventListener('pointercancel', onUp);
+  canvas.addEventListener('pointercancel', onCancel);
   canvas.addEventListener('dblclick', onDblClick);
   canvas.addEventListener('contextmenu', onContextMenu);
 
@@ -333,7 +355,7 @@ export function attachTools(
     canvas.removeEventListener('pointerdown', onDown);
     canvas.removeEventListener('pointermove', onMove);
     canvas.removeEventListener('pointerup', onUp);
-    canvas.removeEventListener('pointercancel', onUp);
+    canvas.removeEventListener('pointercancel', onCancel);
     canvas.removeEventListener('dblclick', onDblClick);
     canvas.removeEventListener('contextmenu', onContextMenu);
   };
