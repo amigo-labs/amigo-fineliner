@@ -319,7 +319,9 @@ export function attachTools(
   };
 
   // A cancelled pointer (touch scroll, palm rejection, window loss) abandons
-  // the in-flight gesture: nothing is committed, previews are cleared.
+  // the in-flight gesture: commit-on-release gestures (selection/shape/move)
+  // are discarded and previews cleared. Pencil/Eraser paint incrementally, so
+  // pixels already applied stay — as a single undoable stroke (stroke_id).
   const onCancel = (e: PointerEvent): void => {
     active = false;
     last = null;
