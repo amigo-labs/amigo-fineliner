@@ -34,13 +34,13 @@ cd ui && pnpm check && pnpm build
 
 ## Tasks
 
-- [ ] T0: Make the UI verification gate runnable (environment, no commit)
+- [x] T0: Make the UI verification gate runnable (environment, no commit)
       Files: none (environment only)
       Change: `rustup target add wasm32-unknown-unknown`; install wasm-pack; run
       `cd ui && pnpm check && pnpm build` once to establish green.
       Verify: both commands exit 0.
 
-- [ ] T1: Fix dangling document handle when opening a corrupt image
+- [x] T1: Fix dangling document handle when opening a corrupt image
       Files: ui/src/lib/core/controller.ts (`newDocument`, `openFile`)
       Change: create/open the NEW document first; only after success close the old
       handle and assign the new one. Today `openFile` closes the current doc, then
@@ -48,7 +48,7 @@ cd ui && pnpm check && pnpm build
       points at a closed slot → every later command throws.
       Verify: `pnpm check` green.
 
-- [ ] T2: Make in-flight pointer gestures immune to mid-drag tool switches; abort on pointercancel
+- [x] T2: Make in-flight pointer gestures immune to mid-drag tool switches; abort on pointercancel
       Files: ui/src/lib/tools/pointer.ts
       Change: (a) record `gestureKind = tool.kind` at `onDown`, use it in the drag
       branches of `onMove`/`onUp` (polygon-lasso click logic stays on live `tool.kind`);
@@ -56,27 +56,27 @@ cd ui && pnpm check && pnpm build
       release capture, commit nothing.
       Verify: `pnpm check && pnpm build` green.
 
-- [ ] T3: Reset layer drag state on dragend
+- [x] T3: Reset layer drag state on dragend
       Files: ui/src/lib/components/panels/LayersPanel.svelte
       Change: `ondragend` resets `draggingIndex` so an abandoned drag can't turn a
       later external drop into a spurious reorder.
       Verify: `pnpm check` green.
 
-- [ ] T4: Export menu — PNG / JPEG / WebP
+- [x] T4: Export menu — PNG / JPEG / WebP
       Files: ui/src/App.svelte, ui/src/lib/core/controller.ts
       Change: generalize `exportPng()` to `exportImage(format)` using the
       already-wired `core.exportJpeg` (quality 90) / `core.exportWebp` (lossless,
       ADR-007); Export button becomes a small dropdown (TransformMenu idiom).
       Verify: `pnpm check && pnpm build` green.
 
-- [ ] T5: Text-entry preview honors the alignment option
+- [x] T5: Text-entry preview honors the alignment option
       Files: ui/src/lib/components/canvas/MainCanvas.svelte
       Change: set `text-align` from `tool.textAlign` and shift the textarea with
       `translateX(0 | -50% | -100%)` so the preview anchors like the committed text
       (core anchors center/right about `x`, tools/text.rs).
       Verify: `pnpm check` green.
 
-- [ ] T6: DX — add README.md, sync CLAUDE.md §10 to reality
+- [x] T6: DX — add README.md, sync CLAUDE.md §10 to reality
       Files: README.md (new), CLAUDE.md §10
       Change: README with prerequisites (Rust, wasm32 target, wasm-pack, pnpm),
       clone→run steps, verification commands, repo layout. CLAUDE.md §10: note
@@ -84,7 +84,7 @@ cd ui && pnpm check && pnpm build
       `pnpm test`/`test:e2e` are Phase 3 (§7.5).
       Verify: proofread; paths exist.
 
-- [ ] T7: Final gate + wrap-up
+- [x] T7: Final gate + wrap-up
       Change: run the full verification gate, check off PLAN.md, push
       `claude/deep-fixup-ut9874`, open a draft PR.
       Verify: gate green; PR exists.
