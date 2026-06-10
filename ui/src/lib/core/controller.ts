@@ -548,18 +548,36 @@ export function redo(): void {
   }
 }
 
-/** Exports the composite as a PNG and triggers a browser download. */
-export function exportPng(): void {
+/** Encoded-export formats (spec §13.2; WebP is lossless per ADR-007). */
+export type ExportFormat = 'png' | 'jpeg' | 'webp';
+
+/** Exports the composite in `format` and triggers a browser download. */
+export function exportImage(format: ExportFormat = 'png'): void {
   if (editor.handle === null) {
     return;
   }
-  const bytes = core.exportPng(editor.handle, 6);
+  let bytes: Uint8Array;
+  let mime: string;
+  switch (format) {
+    case 'jpeg':
+      bytes = core.exportJpeg(editor.handle, 90);
+      mime = 'image/jpeg';
+      break;
+    case 'webp':
+      bytes = core.exportWebp(editor.handle);
+      mime = 'image/webp';
+      break;
+    case 'png':
+      bytes = core.exportPng(editor.handle, 6);
+      mime = 'image/png';
+      break;
+  }
   // Copy into a fresh ArrayBuffer so the Blob owns standalone memory.
-  const blob = new Blob([bytes.slice()], { type: 'image/png' });
+  const blob = new Blob([bytes.slice()], { type: mime });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'fineliner-export.png';
+  a.download = `fineliner-export.${format === 'jpeg' ? 'jpg' : format}`;
   document.body.appendChild(a);
   a.click();
   // Defer cleanup so the browser has started the download (avoids a WebKit
