@@ -91,6 +91,7 @@
         }}
         ondragover={(e) => e.preventDefault()}
         ondrop={() => onDrop(i)}
+        ondragend={() => (draggingIndex = null)}
       >
         <div class="flex items-center gap-1.5">
           <button
