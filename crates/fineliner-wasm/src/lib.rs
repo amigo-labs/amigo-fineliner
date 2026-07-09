@@ -18,13 +18,17 @@ use fineliner_core::{
     ShapeStyle, Shapes, Text, TextAlign, TextStyle,
 };
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 
 thread_local! {
-    /// Open documents, indexed by handle. `None` slots are closed documents.
-    static DOCUMENTS: RefCell<Vec<Option<CommandBus>>> = const { RefCell::new(Vec::new()) };
+    /// Open documents by handle. Handles are never reused, so a stale handle
+    /// held by JS errors instead of silently aliasing a newer document.
+    static DOCUMENTS: RefCell<HashMap<u32, CommandBus>> = RefCell::new(HashMap::new());
+    /// Next handle to hand out; monotonically increasing.
+    static NEXT_HANDLE: Cell<u32> = const { Cell::new(0) };
     /// Registered font byte blobs, indexed by font id (see `register_font`).
     /// The Text tool re-parses these per commit (ADR-012), so JS uploads each
     /// face once and references it by id rather than passing bytes per command.
@@ -39,27 +43,30 @@ pub fn init() {
 
 /// Registers a TrueType/OpenType font and returns its id for use in `DrawText`
 /// commands (spec §9.2 Text; ADR-012, Option B — the caller supplies the font).
+///
+/// Re-registering byte-identical data returns the existing id, so repeated
+/// setup (e.g. per document open) does not accumulate copies.
 #[wasm_bindgen]
 pub fn register_font(data: &[u8]) -> u32 {
     FONTS.with(|fonts| {
         let mut fonts = fonts.borrow_mut();
+        if let Some(id) = fonts.iter().position(|f| f == data) {
+            return id as u32;
+        }
         fonts.push(data.to_vec());
         (fonts.len() - 1) as u32
     })
 }
 
-/// Inserts a bus into the arena and returns its handle.
+/// Inserts a bus into the arena and returns its (never reused) handle.
 fn insert(bus: CommandBus) -> u32 {
-    DOCUMENTS.with(|docs| {
-        let mut docs = docs.borrow_mut();
-        if let Some(slot) = docs.iter().position(Option::is_none) {
-            docs[slot] = Some(bus);
-            slot as u32
-        } else {
-            docs.push(Some(bus));
-            (docs.len() - 1) as u32
-        }
-    })
+    let handle = NEXT_HANDLE.with(|next| {
+        let h = next.get();
+        next.set(h + 1);
+        h
+    });
+    DOCUMENTS.with(|docs| docs.borrow_mut().insert(handle, bus));
+    handle
 }
 
 /// Runs `f` against the bus for `handle`, mapping a missing handle to a JS error.
@@ -69,7 +76,7 @@ fn with_bus<T>(
 ) -> Result<T, JsError> {
     DOCUMENTS.with(|docs| {
         let mut docs = docs.borrow_mut();
-        match docs.get_mut(handle as usize).and_then(Option::as_mut) {
+        match docs.get_mut(&handle) {
             Some(bus) => f(bus),
             None => Err(JsError::new("invalid document handle")),
         }
@@ -92,13 +99,11 @@ pub fn open_image(data: &[u8], _mime_type: &str) -> Result<u32, JsError> {
     Ok(insert(CommandBus::new(doc)))
 }
 
-/// Releases the document for `handle`.
+/// Releases the document for `handle`. The handle is never reused.
 #[wasm_bindgen]
 pub fn close_document(handle: u32) {
     DOCUMENTS.with(|docs| {
-        if let Some(slot) = docs.borrow_mut().get_mut(handle as usize) {
-            *slot = None;
-        }
+        docs.borrow_mut().remove(&handle);
     });
 }
 
