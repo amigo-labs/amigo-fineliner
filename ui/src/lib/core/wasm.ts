@@ -111,6 +111,13 @@ export interface TranslateLayerCommand {
   dy: number;
 }
 
+/** Erase the selected pixels of a layer — the whole layer when no selection
+ * is active (Edit ▸ Clear / Delete key). */
+export interface DeleteSelectionCommand {
+  type: 'delete_selection';
+  layer: number;
+}
+
 /** Layer-structure and -property commands (spec §5.2 / §7.3). */
 export type LayerCommand =
   | { type: 'add_layer'; active: number }
@@ -233,6 +240,7 @@ export type ToolCommand =
   | EraserStrokeCommand
   | FillBucketCommand
   | TranslateLayerCommand
+  | DeleteSelectionCommand
   | LayerCommand
   | SelectionCommand
   | TransformCommand

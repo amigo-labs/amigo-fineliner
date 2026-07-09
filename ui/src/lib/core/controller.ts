@@ -492,6 +492,17 @@ export function fillAt(x: number, y: number, useBackground = false): void {
   syncInfo();
 }
 
+/** Erases the selected pixels of the active layer (Delete / Edit ▸ Clear).
+ *
+ * With no active selection the whole layer is cleared. */
+export function deleteSelection(): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyCommand(editor.handle, { type: 'delete_selection', layer: editor.activeLayer });
+  syncInfo();
+}
+
 /** Translates the active layer's contents by `(dx, dy)` pixels. */
 export function moveLayer(dx: number, dy: number): void {
   if (editor.handle === null || (dx === 0 && dy === 0)) {
