@@ -409,6 +409,9 @@ export async function newDocument(width: number, height: number): Promise<void> 
   syncInfo();
 }
 
+// Stem of the last opened file, reused for export filenames.
+let exportStem = 'fineliner-export';
+
 /** Opens an encoded image file as a new single-layer document. */
 export async function openFile(file: File): Promise<void> {
   await initCore();
@@ -420,6 +423,7 @@ export async function openFile(file: File): Promise<void> {
     core.closeDocument(editor.handle);
   }
   editor.handle = handle;
+  exportStem = file.name.replace(/\.[^.]+$/, '') || exportStem;
   syncInfo();
 }
 
@@ -590,7 +594,7 @@ export function exportImage(format: ExportFormat = 'png', quality = 90): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `fineliner-export.${format === 'jpeg' ? 'jpg' : format}`;
+  a.download = `${exportStem}.${format === 'jpeg' ? 'jpg' : format}`;
   document.body.appendChild(a);
   a.click();
   // Defer cleanup so the browser has started the download (avoids a WebKit
