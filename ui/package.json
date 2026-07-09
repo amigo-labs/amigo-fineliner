@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "wasm": "cd ../crates/fineliner-wasm && wasm-pack build --target web --release --out-dir ../../ui/src/lib/wasm/pkg",
-    "dev": "pnpm run wasm && vite",
+    "wasm:dev": "cd ../crates/fineliner-wasm && wasm-pack build --target web --dev --out-dir ../../ui/src/lib/wasm/pkg",
+    "dev": "pnpm run wasm:dev && vite",
     "build": "pnpm run wasm && vite build",
     "preview": "vite preview",
     "check": "pnpm run wasm && svelte-check --tsconfig ./tsconfig.json",
