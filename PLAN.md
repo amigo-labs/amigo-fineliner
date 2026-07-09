@@ -1,98 +1,68 @@
-# Deep Fixup — execution plan (2026-06-10)
+# Deep Fixup — round 2, execution plan (2026-07-09)
 
-Session record for the deep-fixup pass. Analysis: 3 parallel audits (Rust crates,
-Svelte UI, drift/DX) plus line-level verification of every claim. The repo is
-healthy — Rust baseline fully green, no forbidden patterns, no dead code, M1–M10
-claims accurate, deferred items all documented (ADRs / STATUS known-limitations).
-Surviving findings: 1 real robustness bug, 3 minor UI state bugs, small UX/DX gaps.
+Session record for the second deep-fixup pass (round 1: 2026-06-10, PR #5).
+Analysis: 3 parallel audits (Svelte UI, Rust core/WASM, DX/build/docs) with
+line-level verification of every claim before acting. Unlike round 1, this
+pass found two real core correctness bugs plus a live wire-tag bug.
 
 ## Baseline
 
-- `cargo fmt --check` / `cargo clippy --workspace --all-targets -- -D warnings` /
-  `cargo test --workspace` — all green at session start.
-- `ui/`: `pnpm check|build` need wasm-pack + the `wasm32-unknown-unknown` target
-  (environment setup, T0 — not a repo defect).
+- `cargo fmt --check` / `cargo clippy --workspace --all-targets -- -D warnings`
+  / `cargo test --workspace` (198 tests) — green at session start.
+- `pnpm check` / `pnpm build` — green after installing wasm32 target + wasm-pack.
 
-Full-verification gate:
+## Tasks (all complete)
 
-```sh
-cargo fmt --check && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace
-cd ui && pnpm check && pnpm build
-```
+- [x] A1: MergeDown keeps the lower layer's blend mode/opacity/visibility/lock
+      (was reset to Normal/1.0 — Multiply relationships silently discarded).
+- [x] A2: ResizeCanvas snapshots + clears the selection, restores on undo
+      (stale old-sized mask broke combine gestures, overlay, painting).
+- [x] A3: JPEG export flattens over white in linear light via a shared
+      `over_background` helper (was black in gamma space).
+- [x] B1: WASM document handles are monotonic, never reused (stale handle →
+      error instead of silently aliasing a newer document).
+- [x] B2: register_font dedupes byte-identical re-registrations.
+- [x] B3: selection modifier radii clamped to the mask extent (wasm32 overflow).
+- [x] C: delete_selection command — core (`tools/delete.rs`, coverage-scaled
+      erase), WASM `delete_selection`, UI Delete/Backspace.
+- [x] D1: pointer gestures owned by their starting pointerId; bystander
+      down/move/up/cancel ignored (multi-touch corruption fixed).
+- [x] D2: Escape aborts the in-flight gesture (`gestureControl.cancel`).
+- [x] D3: selection/shapes/text gated to the primary button.
+- [x] D4: New button catches failures into the status bar.
+- [x] E: shared `Modal` (Esc/Enter/autofocus, `ui.modalOpen` suppresses global
+      shortcuts), per-tool cursors, beforeunload guard, `[`/`]` + Ctrl+E
+      shortcuts, hex color entry, export filename stem, marching-ants RAF
+      idles when empty, dead `selectionBounds` adapter removed.
+- [x] F: core dedupe — `Color::within_tolerance` (Fill/Wand),
+      `ImageBuffer::offset_copy` (resize/center-fit), one `DocSnapshot`
+      (merge + transform).
+- [x] G: ts-rs codegen (ADR-014) — test-gated derive exports
+      `ui/src/lib/core/generated/CommandSpec.ts`; `generated-check.ts` fails
+      `pnpm check` on discriminant/field/type drift. First export caught the
+      `rotate_layer_90` wire-tag bug (serde snake_case yields
+      `rotate_layer90`); fixed with an explicit rename + regression test.
+- [x] H: GitHub Actions CI (§10 gate + generated-diff check); `pnpm dev`
+      builds WASM `--dev` (stale-WASM note in README); insta snapshots for
+      compose/codec (`tests/snapshots/`); PNG/BMP round-trip proptests.
+- [x] I: CLAUDE.md §15 planned-path markers, ADR-014, STATUS.md round-2
+      section, this PLAN.md, push + draft PR.
 
-## Findings dropped after verification (no tasks)
+## Verification
 
-- "Text entry coordinate-scale bug" — false; textarea is positioned in display px
-  inside a wrapper sized to the displayed canvas; consistent with `toCanvasPoint`.
-- "Opacity slider floods undo" — false; `SetLayerOpacity::merge_with`
-  (command/properties.rs) coalesces slider drags.
-- "Ctrl+Z during rename triggers global undo" — false; App.svelte guards
-  `HTMLInputElement | HTMLTextAreaElement`.
-- Marching-ants O(W×H) rebuild + overlay DPR — documented STATUS known-limitations (M16).
-- `rmp-serde`/`zstd` workspace deps unused — deliberate (M14, ADR-004).
-- Rust crates: dedicated audit found no demonstrable bugs.
-
-## Tasks
-
-- [x] T0: Make the UI verification gate runnable (environment, no commit)
-      Files: none (environment only)
-      Change: `rustup target add wasm32-unknown-unknown`; install wasm-pack; run
-      `cd ui && pnpm check && pnpm build` once to establish green.
-      Verify: both commands exit 0.
-
-- [x] T1: Fix dangling document handle when opening a corrupt image
-      Files: ui/src/lib/core/controller.ts (`newDocument`, `openFile`)
-      Change: create/open the NEW document first; only after success close the old
-      handle and assign the new one. Today `openFile` closes the current doc, then
-      `core.openImage` throws on a bad file → document destroyed + `editor.handle`
-      points at a closed slot → every later command throws.
-      Verify: `pnpm check` green.
-
-- [x] T2: Make in-flight pointer gestures immune to mid-drag tool switches; abort on pointercancel
-      Files: ui/src/lib/tools/pointer.ts
-      Change: (a) record `gestureKind = tool.kind` at `onDown`, use it in the drag
-      branches of `onMove`/`onUp` (polygon-lasso click logic stays on live `tool.kind`);
-      (b) `pointercancel` gets an abort handler: clear gesture state and previews,
-      release capture, commit nothing.
-      Verify: `pnpm check && pnpm build` green.
-
-- [x] T3: Reset layer drag state on dragend
-      Files: ui/src/lib/components/panels/LayersPanel.svelte
-      Change: `ondragend` resets `draggingIndex` so an abandoned drag can't turn a
-      later external drop into a spurious reorder.
-      Verify: `pnpm check` green.
-
-- [x] T4: Export menu — PNG / JPEG / WebP
-      Files: ui/src/App.svelte, ui/src/lib/core/controller.ts
-      Change: generalize `exportPng()` to `exportImage(format)` using the
-      already-wired `core.exportJpeg` (quality 90) / `core.exportWebp` (lossless,
-      ADR-007); Export button becomes a small dropdown (TransformMenu idiom).
-      Verify: `pnpm check && pnpm build` green.
-
-- [x] T5: Text-entry preview honors the alignment option
-      Files: ui/src/lib/components/canvas/MainCanvas.svelte
-      Change: set `text-align` from `tool.textAlign` and shift the textarea with
-      `translateX(0 | -50% | -100%)` so the preview anchors like the committed text
-      (core anchors center/right about `x`, tools/text.rs).
-      Verify: `pnpm check` green.
-
-- [x] T6: DX — add README.md, sync CLAUDE.md §10 to reality
-      Files: README.md (new), CLAUDE.md §10
-      Change: README with prerequisites (Rust, wasm32 target, wasm-pack, pnpm),
-      clone→run steps, verification commands, repo layout. CLAUDE.md §10: note
-      `pnpm lint` aliases `check` (svelte-check; no ESLint in Phase 1) and
-      `pnpm test`/`test:e2e` are Phase 3 (§7.5).
-      Verify: proofread; paths exist.
-
-- [x] T7: Final gate + wrap-up
-      Change: run the full verification gate, check off PLAN.md, push
-      `claude/deep-fixup-ut9874`, open a draft PR.
-      Verify: gate green; PR exists.
+- Full gate green: fmt, clippy `-D warnings`, `cargo test --workspace`
+  (214 tests), `pnpm check` (0 errors), `pnpm build`.
+- Node smoke tests through the real WASM boundary: MergeDown composite
+  preservation, resize+selection undo, delete_selection, stale-handle error,
+  rotate_layer_90 tag.
+- Playwright browser run (11 checks green): per-tool cursors, Escape abort,
+  right-click gating, paint + Ctrl+A + Delete, modal autofocus/Escape, hex
+  entry, no page errors.
+- Drift check negative-tested: an injected field typo fails `pnpm check`.
 
 ## Not this session
 
-- Move-tool ghost preview (CLAUDE.md M6 text vs STATUS deferral) — needs a new
-  WASM per-layer pixel API; M-sized.
-- New-document size dialog (New is fixed 800×600) and zoom/pan — feature work.
-- ESLint/Prettier for ui/ — new deps require explicit approval (CLAUDE.md §9).
-- `[workspace.lints]` polish; marching-ants perf (M16); lossy WebP (ADR-007).
+- Zoom/pan, New-document size dialog, Move ghost, Free Transform — feature work.
+- `cw90`/`ccw90` string normalization — cosmetic cross-boundary churn.
+- ESLint/Prettier — separate dependency decision.
+- Marching-ants contour tracing / dirty rects — M16 performance pass.

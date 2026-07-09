@@ -275,6 +275,45 @@ approved (ab_glyph) with the UI supplying font bytes (Option B), per ADR-012.
   rich on-canvas caret/IME is a later polish item.
 - Dash stepping is O(pixels × on-segments); fine for Phase 1, an M16 concern.
 
+## Deep fixup — round 2 (2026-07, PLAN.md)
+
+Three parallel audits (UI, core/WASM, DX) with line-level verification, then a
+full fixup pass. All findings fixed and verified end-to-end (cargo gate, node
+WASM smoke tests, Playwright browser run):
+
+- **Core bugs:** `MergeDown` now keeps the lower layer's blend mode/opacity
+  (was silently reset to Normal/1.0, visibly changing the composite);
+  `ResizeCanvas` drops the selection mask and restores it on undo (a stale
+  old-sized mask silently broke add/subtract gestures, the overlay, and
+  painting in grown regions); JPEG export flattens over white in linear light
+  (was black in gamma space, inconsistent with FlattenImage).
+- **Wire-tag bug:** serde's `rename_all` yields `rotate_layer90`, the UI sends
+  `rotate_layer_90` — Layer ▸ Rotate 90° was rejected as an unknown variant.
+  Found by the new ts-rs codegen; fixed with an explicit rename + test.
+- **WASM hardening:** document handles are never reused (stale handles error
+  instead of aliasing a newer document); `register_font` dedupes; selection
+  modifier radii are clamped (wasm32 overflow).
+- **New command:** `delete_selection` (core + WASM + Delete/Backspace) erases
+  the selected pixels of the active layer, coverage-scaled.
+- **UI gesture fixes:** in-flight gestures are owned by their pointerId
+  (multi-touch/second-button no longer corrupts them); Escape aborts a
+  gesture; selection/shapes/text respond to the primary button only; the New
+  button reports errors.
+- **UX:** shared `Modal` (Escape/Enter/autofocus, global-shortcut suppression),
+  per-tool cursors, beforeunload guard, `[`/`]` brush size, Ctrl+E export
+  menu, hex color entry, export filenames from the opened file's stem,
+  marching-ants RAF idles when the overlay is empty.
+- **DX:** GitHub Actions CI (full §10 gate + generated-bindings freshness);
+  `pnpm dev` builds WASM with `--dev`; ts-rs-generated `CommandSpec.ts` +
+  type-level drift check (ADR-014); insta snapshots for compose/codec; codec
+  round-trip proptests; core dedupe (tolerance test on `Color`,
+  `ImageBuffer::offset_copy`, one `DocSnapshot`).
+
+Deliberately not done: zoom/pan, New-size dialog, move ghost, Free Transform
+(feature work); `cw90`/`ccw90` string normalization (cosmetic churn);
+ESLint/Prettier (separate dependency decision); status-bar cursor coordinates;
+the 404 KB font committed twice (test-fixture isolation is deliberate).
+
 ## Next concrete task — M11 (fineliner-effects crate)
 
 New crate `fineliner-effects` (independent of core, ADR-002): Blur (Gaussian,
