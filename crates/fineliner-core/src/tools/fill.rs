@@ -123,7 +123,7 @@ impl Fill {
                         return;
                     }
                     if let Some(c) = sample.get_pixel(nx, ny) {
-                        if within_tolerance(c, seed_color, tol) {
+                        if c.within_tolerance(seed_color, tol) {
                             mask[i] = true;
                             stack.push((nx, ny));
                         }
@@ -146,7 +146,7 @@ impl Fill {
             for y in 0..h {
                 for x in 0..w {
                     if let Some(c) = sample.get_pixel(x, y) {
-                        if within_tolerance(c, seed_color, tol) {
+                        if c.within_tolerance(seed_color, tol) {
                             mask[idx(x, y)] = true;
                         }
                     }
@@ -204,19 +204,6 @@ impl Fill {
 
         Some(SetPixels::new(layer_index, region, after).with_label("Fill"))
     }
-}
-
-/// Whether `a` is within `tol` Euclidean RGBA8 distance of `b`.
-///
-/// `tol == 0` requires an exact match.
-fn within_tolerance(a: Color, b: Color, tol: u8) -> bool {
-    let dr = a.r as i32 - b.r as i32;
-    let dg = a.g as i32 - b.g as i32;
-    let db = a.b as i32 - b.b as i32;
-    let da = a.a as i32 - b.a as i32;
-    let dist2 = dr * dr + dg * dg + db * db + da * da;
-    let tol = tol as i32;
-    dist2 <= tol * tol
 }
 
 #[cfg(test)]

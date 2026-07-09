@@ -48,6 +48,20 @@ impl Color {
         Self { r, g, b, a }
     }
 
+    /// Whether `self` is within `tol` Euclidean RGBA8 distance of `other`.
+    ///
+    /// `tol == 0` requires an exact match. The shared tolerance test of the
+    /// Fill tool and the Magic Wand (spec §9.2 / §9.3).
+    pub fn within_tolerance(self, other: Color, tol: u8) -> bool {
+        let dr = self.r as i32 - other.r as i32;
+        let dg = self.g as i32 - other.g as i32;
+        let db = self.b as i32 - other.b as i32;
+        let da = self.a as i32 - other.a as i32;
+        let dist2 = dr * dr + dg * dg + db * db + da * da;
+        let tol = tol as i32;
+        dist2 <= tol * tol
+    }
+
     /// Converts to RGBA32f in `[0.0, 1.0]` (no premultiplication, no gamma change).
     pub fn to_rgba32f(self) -> [f32; 4] {
         [
