@@ -12,10 +12,10 @@ use fineliner_core::command::{
     SetLayerOpacity, SetLayerVisible, SetSelection, TransformLayer,
 };
 use fineliner_core::{
-    apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, DashPattern, Document,
-    Eraser, EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil,
-    Point, Rect, SampleSize, SampleSource, SelectionMask, SelectionMode, Shape, ShapeMode,
-    ShapeStyle, Shapes, Text, TextAlign, TextStyle,
+    apply_mode, compose, delete_selection, magic_wand, BlendMode, Brush, BrushShape, Color,
+    DashPattern, Document, Eraser, EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer,
+    Interpolation, Move, Pencil, Point, Rect, SampleSize, SampleSource, SelectionMask,
+    SelectionMode, Shape, ShapeMode, ShapeStyle, Shapes, Text, TextAlign, TextStyle,
 };
 use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
@@ -388,6 +388,9 @@ enum CommandSpec {
     },
     /// Translate a layer's contents by `(dx, dy)` pixels (the Move tool).
     TranslateLayer { layer: usize, dx: i32, dy: i32 },
+    /// Erase the selected pixels of `layer` to transparent; the whole layer
+    /// when no selection is active (Edit ▸ Clear / Delete key).
+    DeleteSelection { layer: usize },
     /// Add a transparent layer above `active`.
     AddLayer { active: usize },
     /// Remove the layer at `index`.
@@ -632,6 +635,12 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             match Move.translate(layer, dx, dy, &bus.document) {
                 Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
                 None => Ok(()),
+            }
+        }
+        CommandSpec::DeleteSelection { layer } => {
+            match delete_selection(layer, &bus.document) {
+                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                None => Ok(()), // empty selection or invalid layer — no-op
             }
         }
         CommandSpec::AddLayer { active } => {
