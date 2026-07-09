@@ -9,9 +9,11 @@
     redo,
     selectAll,
     deselect,
+    deleteSelection,
     invertSelection,
     type ExportFormat,
   } from './lib/core/controller';
+  import { gestureControl } from './lib/tools/pointer';
   import MainCanvas from './lib/components/canvas/MainCanvas.svelte';
   import ToolBar from './lib/components/toolbar/ToolBar.svelte';
   import ToolOptions from './lib/components/toolbar/ToolOptions.svelte';
@@ -110,6 +112,11 @@
     } else if (ctrl && e.shiftKey && key === 'i') {
       e.preventDefault();
       invertSelection();
+    } else if (key === 'escape') {
+      gestureControl.cancel();
+    } else if (key === 'delete' || key === 'backspace') {
+      e.preventDefault();
+      deleteSelection();
     } else if (!ctrl && key === 'x') {
       swapColors();
     } else if (!ctrl && key === 'd') {
@@ -132,7 +139,10 @@
     class="flex items-center gap-2 border-b border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] px-3 py-1.5 text-sm"
   >
     <span class="mr-3 font-semibold text-[var(--fl-accent)]">Fineliner</span>
-    <button class="rounded px-2 py-1 hover:bg-neutral-700" onclick={() => newDocument(800, 600)}>
+    <button
+      class="rounded px-2 py-1 hover:bg-neutral-700"
+      onclick={() => newDocument(800, 600).catch((e) => (loadError = String(e)))}
+    >
       New
     </button>
     <button class="rounded px-2 py-1 hover:bg-neutral-700" onclick={() => fileInput.click()}>

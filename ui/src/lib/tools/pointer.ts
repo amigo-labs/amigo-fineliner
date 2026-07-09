@@ -36,6 +36,12 @@ function selectionModeOf(e: PointerEvent): SelectionMode {
 const DRAG_SELECT: ReadonlySet<ToolKind> = new Set(['rect_select', 'ellipse_select', 'lasso']);
 
 /**
+ * Cancels the in-flight gesture without committing (Escape). Wired up by
+ * `attachTools`; a no-op while no canvas is mounted.
+ */
+export const gestureControl = { cancel: (): void => {} };
+
+/**
  * Normalizes two corners into a positive-size rect.
  *
  * Shift is reserved for the selection combine mode (add), so rectangle/ellipse
@@ -92,6 +98,10 @@ export function attachTools(
   onPlaceText?: (cx: number, cy: number, e: PointerEvent) => void,
 ): () => void {
   let active = false;
+  // The pointer that owns the in-flight gesture: a second pointer coming down
+  // mid-drag (second touch finger, other mouse button) must not clobber the
+  // gesture state or steal the capture.
+  let activePointer: number | null = null;
   // The tool that started the drag: keyboard tool switches mid-drag must not
   // change how the in-flight gesture is interpreted or committed.
   let gestureKind: ToolKind = 'pencil';
@@ -122,6 +132,21 @@ export function attachTools(
     if (e.button !== 0 && e.button !== 2) {
       return;
     }
+    // Ignore additional pointers while a gesture is in flight.
+    if (active) {
+      return;
+    }
+    // Selection, shapes and text respond to the primary button only; the right
+    // button is reserved for the background-color paint variants (spec §9.2).
+    const selectionOrPlacement =
+      DRAG_SELECT.has(tool.kind) ||
+      tool.kind === 'polygon_lasso' ||
+      tool.kind === 'magic_wand' ||
+      tool.kind === 'shapes' ||
+      tool.kind === 'text';
+    if (selectionOrPlacement && e.button !== 0) {
+      return;
+    }
     // Abandon any in-progress polygon when switching away from that tool.
     if (tool.kind !== 'polygon_lasso' && polygonPoints.length > 0) {
       polygonPoints = [];
@@ -143,6 +168,7 @@ export function attachTools(
 
     if (tool.kind === 'shapes') {
       active = true;
+      activePointer = e.pointerId;
       gestureKind = tool.kind;
       start = point;
       last = point;
@@ -177,6 +203,7 @@ export function attachTools(
 
     if (DRAG_SELECT.has(tool.kind)) {
       active = true;
+      activePointer = e.pointerId;
       gestureKind = tool.kind;
       start = point;
       last = point;
@@ -193,6 +220,7 @@ export function attachTools(
     }
 
     active = true;
+    activePointer = e.pointerId;
     gestureKind = tool.kind;
     useBackground = e.button === 2;
     last = point;
@@ -222,6 +250,10 @@ export function attachTools(
   };
 
   const onMove = (e: PointerEvent): void => {
+    // Only the pointer that started the gesture may drive it.
+    if (active && e.pointerId !== activePointer) {
+      return;
+    }
     const point = toCanvasPoint(canvas, e);
 
     // Polygonal lasso tracks a rubber line to the cursor between clicks.
@@ -278,7 +310,7 @@ export function attachTools(
   };
 
   const onUp = (e: PointerEvent): void => {
-    if (!active) {
+    if (!active || e.pointerId !== activePointer) {
       return;
     }
     if (DRAG_SELECT.has(gestureKind) && start && last) {
@@ -311,6 +343,7 @@ export function attachTools(
     // stale rubber-band can never stay on the overlay.
     shapePreview.value = null;
     active = false;
+    activePointer = null;
     last = null;
     start = null;
     if (canvas.hasPointerCapture(e.pointerId)) {
@@ -318,20 +351,33 @@ export function attachTools(
     }
   };
 
-  // A cancelled pointer (touch scroll, palm rejection, window loss) abandons
-  // the in-flight gesture: commit-on-release gestures (selection/shape/move)
-  // are discarded and previews cleared. Pencil/Eraser paint incrementally, so
-  // pixels already applied stay — as a single undoable stroke (stroke_id).
-  const onCancel = (e: PointerEvent): void => {
+  /**
+   * Abandons the in-flight gesture without committing: commit-on-release
+   * gestures (selection/shape/move) are discarded, previews cleared, and any
+   * placed polygon vertices dropped. Pencil/Eraser paint incrementally, so
+   * pixels already applied stay — as a single undoable stroke (stroke_id).
+   */
+  const abort = (): void => {
+    if (activePointer !== null && canvas.hasPointerCapture(activePointer)) {
+      canvas.releasePointerCapture(activePointer);
+    }
     active = false;
+    activePointer = null;
     last = null;
     start = null;
     lassoPath = [];
+    polygonPoints = [];
     selectionPreview.value = null;
     shapePreview.value = null;
-    if (canvas.hasPointerCapture(e.pointerId)) {
-      canvas.releasePointerCapture(e.pointerId);
+  };
+
+  // A cancelled pointer (touch scroll, palm rejection, window loss) abandons
+  // the in-flight gesture — unless the cancel is for a bystander pointer.
+  const onCancel = (e: PointerEvent): void => {
+    if (active && e.pointerId !== activePointer) {
+      return;
     }
+    abort();
   };
 
   // Double-click closes a polygonal-lasso selection.
@@ -350,8 +396,10 @@ export function attachTools(
   canvas.addEventListener('pointercancel', onCancel);
   canvas.addEventListener('dblclick', onDblClick);
   canvas.addEventListener('contextmenu', onContextMenu);
+  gestureControl.cancel = abort;
 
   return () => {
+    gestureControl.cancel = () => {};
     canvas.removeEventListener('pointerdown', onDown);
     canvas.removeEventListener('pointermove', onMove);
     canvas.removeEventListener('pointerup', onUp);
