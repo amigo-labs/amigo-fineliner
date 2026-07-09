@@ -340,7 +340,13 @@ fn sample_size(edge: u32) -> SampleSize {
 }
 
 /// A JSON-serializable command from JS (spec §17 `SerializedCommand`).
+///
+/// The TypeScript mirror of this enum is generated from it via ts-rs
+/// (ADR-014): `cargo test -p fineliner-wasm export_command_spec` writes
+/// `ui/src/lib/core/generated/CommandSpec.ts`, and the UI's command types are
+/// checked against it at `pnpm check` time.
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum CommandSpec {
     /// A pencil stroke over a polyline of `[x, y]` points.
@@ -472,6 +478,9 @@ enum CommandSpec {
     /// Flip or 180°-rotate the active layer (`op`: flip_h/flip_v/rotate_180).
     TransformLayer { layer: usize, op: String },
     /// Rotate the active layer 90° (counter-clockwise when `ccw`).
+    // Explicit rename: rename_all would yield "rotate_layer90" (serde inserts
+    // no separator before digits), but the UI-facing tag is "rotate_layer_90".
+    #[serde(rename = "rotate_layer_90")]
     RotateLayer90 { layer: usize, ccw: bool },
     /// Flip the whole canvas (all layers) horizontally or vertically.
     FlipCanvas { horizontal: bool },
@@ -1117,4 +1126,43 @@ pub fn get_selection_mask(handle: u32) -> Result<Clamped<Vec<u8>>, JsError> {
 /// Converts a core error into a JS error.
 fn to_js(e: fineliner_core::DocumentError) -> JsError {
     JsError::new(&e.to_string())
+}
+
+#[cfg(test)]
+mod command_spec_tests {
+    use super::CommandSpec;
+
+    /// Regression: serde's snake_case puts no separator before digits, so the
+    /// variant carries an explicit rename to keep the documented wire tag.
+    #[test]
+    fn rotate_layer_90_wire_tag_deserializes() {
+        let spec: CommandSpec =
+            serde_json::from_str(r#"{"type":"rotate_layer_90","layer":0,"ccw":true}"#)
+                .expect("tag must parse");
+        assert!(matches!(
+            spec,
+            CommandSpec::RotateLayer90 {
+                layer: 0,
+                ccw: true
+            }
+        ));
+    }
+}
+
+#[cfg(test)]
+mod ts_bindings {
+    use super::CommandSpec;
+    use ts_rs::{Config, TS};
+
+    /// Regenerates the TypeScript mirror of `CommandSpec` (ADR-014). CI checks
+    /// that the committed file under `ui/src/lib/core/generated/` is in sync.
+    #[test]
+    fn export_command_spec_bindings() {
+        // stroke_id (u64) exports as `number`: the UI generates small
+        // monotonic ids, far below Number.MAX_SAFE_INTEGER.
+        let cfg = Config::new()
+            .with_large_int("number")
+            .with_out_dir("../../ui/src/lib/core/generated");
+        CommandSpec::export_all(&cfg).expect("export TypeScript bindings");
+    }
 }
