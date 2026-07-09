@@ -9,32 +9,13 @@
 //! verbatim — structural merges are infrequent, so the clone cost is
 //! acceptable (spec §7.1).
 
+use super::snapshot::{restore, snapshot, DocSnapshot};
 use super::Command;
 use crate::color::{BlendMode, Color};
 use crate::document::{Document, Layer};
 use crate::error::DocumentError;
 use crate::render::{compose, compose_over};
 use std::any::Any;
-
-/// The prior layer stack, captured on first apply for exact reversal.
-struct Snapshot {
-    layers: Vec<Layer>,
-    active: usize,
-}
-
-/// Captures the current layer stack and active index.
-fn snapshot(doc: &Document) -> Snapshot {
-    Snapshot {
-        layers: doc.layers().to_vec(),
-        active: doc.active_layer_index(),
-    }
-}
-
-/// Restores a previously captured layer stack.
-fn restore(doc: &mut Document, snap: Snapshot) -> Result<(), DocumentError> {
-    doc.layers = snap.layers;
-    doc.set_active_layer(snap.active)
-}
 
 /// Merges the layer at `index` onto the layer directly below it.
 ///
@@ -46,7 +27,7 @@ fn restore(doc: &mut Document, snap: Snapshot) -> Result<(), DocumentError> {
 /// or out of range.
 pub struct MergeDown {
     index: usize,
-    before: Option<Snapshot>,
+    before: Option<DocSnapshot>,
 }
 
 impl MergeDown {
@@ -108,7 +89,7 @@ impl Command for MergeDown {
 /// The merged layer is placed at the position of the lowest visible layer. A
 /// no-op if no layer is visible.
 pub struct MergeVisible {
-    before: Option<Snapshot>,
+    before: Option<DocSnapshot>,
 }
 
 impl MergeVisible {
@@ -172,7 +153,7 @@ impl Command for MergeVisible {
 /// Flattens every layer onto an opaque white background, producing a single
 /// fully opaque "Background" layer (spec §5.2).
 pub struct FlattenImage {
-    before: Option<Snapshot>,
+    before: Option<DocSnapshot>,
 }
 
 impl FlattenImage {

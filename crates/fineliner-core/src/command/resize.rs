@@ -101,27 +101,6 @@ impl ResizeCanvas {
     }
 }
 
-/// Copies `src` into a fresh `w` × `h` buffer, offset by `(dx, dy)`.
-fn resized(src: &ImageBuffer, w: u32, h: u32, dx: i32, dy: i32) -> ImageBuffer {
-    let mut out = ImageBuffer::new_transparent(w, h);
-    for sy in 0..src.height() {
-        let ty = sy as i32 + dy;
-        if ty < 0 || ty >= h as i32 {
-            continue;
-        }
-        for sx in 0..src.width() {
-            let tx = sx as i32 + dx;
-            if tx < 0 || tx >= w as i32 {
-                continue;
-            }
-            if let Some(c) = src.get_pixel(sx, sy) {
-                out.set_pixel(tx as u32, ty as u32, c);
-            }
-        }
-    }
-    out
-}
-
 impl Command for ResizeCanvas {
     fn apply(&mut self, doc: &mut Document) -> Result<(), DocumentError> {
         let new_canvas = CanvasSize::new(self.new_width, self.new_height)?;
@@ -140,7 +119,9 @@ impl Command for ResizeCanvas {
         let dx = axis_offset(self.new_width, doc.canvas.width(), hpos);
         let dy = axis_offset(self.new_height, doc.canvas.height(), vpos);
         for layer in &mut doc.layers {
-            layer.pixels = resized(&layer.pixels, self.new_width, self.new_height, dx, dy);
+            layer.pixels = layer
+                .pixels
+                .offset_copy(self.new_width, self.new_height, dx, dy);
         }
         doc.canvas = new_canvas;
         Ok(())

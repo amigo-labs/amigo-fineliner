@@ -8,8 +8,9 @@
 //! dimensions. Canvas transforms clear any selection (its geometry no longer
 //! matches); the prior selection is restored on undo.
 
+use super::snapshot::{restore, snapshot, DocSnapshot};
 use super::Command;
-use crate::document::{CanvasSize, Document, ImageBuffer, Layer};
+use crate::document::{CanvasSize, Document, ImageBuffer};
 use crate::error::DocumentError;
 use crate::selection::SelectionMask;
 use crate::transform::{
@@ -226,55 +227,6 @@ impl Command for RotateCanvas {
     }
 }
 
-/// Full document state captured for reversing a lossy/structural transform.
-struct CanvasSnapshot {
-    layers: Vec<Layer>,
-    canvas: CanvasSize,
-    selection: Option<SelectionMask>,
-    active: usize,
-}
-
-/// Captures the current layers, canvas size, selection, and active index.
-fn snapshot(doc: &Document) -> CanvasSnapshot {
-    CanvasSnapshot {
-        layers: doc.layers().to_vec(),
-        canvas: doc.canvas,
-        selection: doc.selection.clone(),
-        active: doc.active_layer_index(),
-    }
-}
-
-/// Restores a previously captured document state.
-fn restore(doc: &mut Document, snap: CanvasSnapshot) -> Result<(), DocumentError> {
-    doc.layers = snap.layers;
-    doc.canvas = snap.canvas;
-    doc.selection = snap.selection;
-    doc.set_active_layer(snap.active)
-}
-
-/// Copies `src` into a fresh `w` × `h` buffer, centered (clipping any overflow).
-fn center_fit(src: &ImageBuffer, w: u32, h: u32) -> ImageBuffer {
-    let mut out = ImageBuffer::new_transparent(w, h);
-    let dx = (w as i32 - src.width() as i32) / 2;
-    let dy = (h as i32 - src.height() as i32) / 2;
-    for sy in 0..src.height() {
-        let ty = sy as i32 + dy;
-        if ty < 0 || ty >= h as i32 {
-            continue;
-        }
-        for sx in 0..src.width() {
-            let tx = sx as i32 + dx;
-            if tx < 0 || tx >= w as i32 {
-                continue;
-            }
-            if let Some(c) = src.get_pixel(sx, sy) {
-                out.set_pixel(tx as u32, ty as u32, c);
-            }
-        }
-    }
-    out
-}
-
 /// Scales the whole image (all layers) to a new size, resizing the canvas to
 /// match (spec §10.5). Resampling uses the chosen [`Interpolation`]. Lossy, so
 /// the prior state is snapshotted for undo; the selection is cleared.
@@ -282,7 +234,7 @@ pub struct ScaleImage {
     width: u32,
     height: u32,
     interp: Interpolation,
-    before: Option<CanvasSnapshot>,
+    before: Option<DocSnapshot>,
 }
 
 impl ScaleImage {
@@ -330,7 +282,7 @@ impl Command for ScaleImage {
 /// Because every layer is canvas-sized in this model, pixels outside the new
 /// canvas are clipped (ADR-010). A no-op when there is no selection.
 pub struct CropToSelection {
-    before: Option<CanvasSnapshot>,
+    before: Option<DocSnapshot>,
 }
 
 impl CropToSelection {
@@ -420,7 +372,9 @@ impl Command for RotateLayer90 {
         } else {
             rotate_90_cw(&layer.pixels)
         };
-        layer.pixels = center_fit(&rotated, cw, ch);
+        let dx = (cw as i32 - rotated.width() as i32) / 2;
+        let dy = (ch as i32 - rotated.height() as i32) / 2;
+        layer.pixels = rotated.offset_copy(cw, ch, dx, dy);
         Ok(())
     }
 

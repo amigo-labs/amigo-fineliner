@@ -95,6 +95,31 @@ impl ImageBuffer {
         }
     }
 
+    /// Copies this buffer into a fresh transparent `w` × `h` buffer with its
+    /// origin at `(dx, dy)`, clipping anything that falls outside.
+    ///
+    /// Shared by canvas resize (anchored placement) and layer 90°-rotation
+    /// (center fit).
+    pub fn offset_copy(&self, w: u32, h: u32, dx: i32, dy: i32) -> ImageBuffer {
+        let mut out = ImageBuffer::new_transparent(w, h);
+        for sy in 0..self.height {
+            let ty = sy as i32 + dy;
+            if ty < 0 || ty >= h as i32 {
+                continue;
+            }
+            for sx in 0..self.width {
+                let tx = sx as i32 + dx;
+                if tx < 0 || tx >= w as i32 {
+                    continue;
+                }
+                if let Some(c) = self.get_pixel(sx, sy) {
+                    out.set_pixel(tx as u32, ty as u32, c);
+                }
+            }
+        }
+        out
+    }
+
     /// Extracts a sub-region as a new buffer.
     ///
     /// The region must lie fully within the buffer, otherwise
