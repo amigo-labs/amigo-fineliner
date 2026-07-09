@@ -55,7 +55,12 @@ pub fn compose(layers: &[Layer]) -> ImageBuffer {
 /// alpha is always 255. The over-background blend is performed in linear light
 /// to match [`compose`]. The output size matches the first layer (0×0 if empty).
 pub fn compose_over(layers: &[Layer], background: Color) -> ImageBuffer {
-    let mut out = compose(layers);
+    over_background(compose(layers), background)
+}
+
+/// Composites a straight-alpha buffer over an opaque `background` in linear
+/// light, yielding a fully opaque buffer (also used by the JPEG encoder).
+pub(crate) fn over_background(mut out: ImageBuffer, background: Color) -> ImageBuffer {
     let bg_lin = [
         srgb_to_linear(background.r as f32 / 255.0),
         srgb_to_linear(background.g as f32 / 255.0),
