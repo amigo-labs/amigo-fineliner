@@ -779,23 +779,26 @@ Planned skills:
 docs/specs/fineliner.md         The spec — what to build
 CLAUDE.md                       This file — how to build it
 STATUS.md                       Current session state, next task
-.claude/skills/                 Project-specific skill recipes
+README.md                       Prerequisites, clone→run, verification
+.github/workflows/ci.yml        CI gate (fmt, clippy, test, pnpm check/build)
+.claude/skills/                 Project-specific skill recipes (planned, §14)
 
 crates/fineliner-core/          Pure logic, no I/O, no platform
-crates/fineliner-effects/       Stateless image effects + adjustments
+crates/fineliner-effects/       Stateless image effects + adjustments (planned, M11)
 crates/fineliner-wasm/          wasm-bindgen layer, cdylib
 
 ui/                             Svelte 5 + Vite frontend (PWA)
 ui/src/lib/core/                WASM adapter (single import point)
-ui/src/lib/render/              Canvas2D and WebGPU renderers
+ui/src/lib/core/generated/      ts-rs-generated CommandSpec mirror (ADR-014)
+ui/src/lib/render/              Canvas2D renderer (WebGPU planned, M16)
 ui/src/lib/tools/               Pointer event → tool command handlers
 ui/src/lib/stores/              Svelte 5 runes state
 ui/src/lib/components/          Svelte components
 
-src-tauri/                      Native shell (Tauri 2)
+src-tauri/                      Native shell (Tauri 2) (planned, M14)
 
-website/                        Landing page (separate from app)
-wrangler.toml                   Cloudflare Pages deployment config
+website/                        Landing page (planned)
+wrangler.toml                   Cloudflare Pages deployment config (planned, M15)
 ```
 
 ---
