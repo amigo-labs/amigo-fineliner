@@ -3,6 +3,7 @@
 use super::Command;
 use crate::document::{CanvasSize, Document, ImageBuffer};
 use crate::error::DocumentError;
+use crate::selection::SelectionMask;
 use std::any::Any;
 
 /// Where existing content is anchored when the canvas is resized (spec §10.4).
@@ -78,6 +79,7 @@ pub struct ResizeCanvas {
     new_height: u32,
     anchor: Anchor,
     prev: Option<(CanvasSize, Vec<ImageBuffer>)>,
+    prev_selection: Option<Option<SelectionMask>>,
 }
 
 impl ResizeCanvas {
@@ -88,6 +90,7 @@ impl ResizeCanvas {
             new_height: height,
             anchor: Anchor::TopLeft,
             prev: None,
+            prev_selection: None,
         }
     }
 
@@ -126,6 +129,13 @@ impl Command for ResizeCanvas {
             let buffers = doc.layers.iter().map(|l| l.pixels.clone()).collect();
             self.prev = Some((doc.canvas, buffers));
         }
+        // The selection mask is canvas-sized; drop it like the other canvas
+        // ops (FlipCanvas, ScaleImage) do and restore it on undo.
+        if self.prev_selection.is_none() {
+            self.prev_selection = Some(doc.selection.take());
+        } else {
+            doc.selection = None;
+        }
         let (hpos, vpos) = self.anchor.axes();
         let dx = axis_offset(self.new_width, doc.canvas.width(), hpos);
         let dy = axis_offset(self.new_height, doc.canvas.height(), vpos);
@@ -145,6 +155,9 @@ impl Command for ResizeCanvas {
             layer.pixels = buf.clone();
         }
         doc.canvas = *canvas;
+        if let Some(sel) = self.prev_selection.clone() {
+            doc.selection = sel;
+        }
         Ok(())
     }
 
@@ -189,6 +202,26 @@ mod tests {
             doc.layers[0].pixels.get_pixel(5, 5),
             Some(Color::TRANSPARENT)
         );
+    }
+
+    #[test]
+    fn resize_clears_selection_and_undo_restores_it() {
+        // A canvas-sized mask must not survive a resize (every consumer
+        // assumes mask dims == canvas dims), but undo brings it back exactly.
+        let mut doc = Document::new(8, 8).unwrap();
+        doc.selection = Some(SelectionMask::new_full(8, 8));
+        let before = doc.selection.clone();
+
+        let mut cmd = ResizeCanvas::new(4, 4);
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!(doc.selection, None);
+
+        cmd.revert(&mut doc).unwrap();
+        assert_eq!(doc.selection, before);
+
+        // Redo clears it again and does not resurrect the stale mask.
+        cmd.apply(&mut doc).unwrap();
+        assert_eq!(doc.selection, None);
     }
 
     #[test]
