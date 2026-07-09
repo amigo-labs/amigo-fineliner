@@ -8,9 +8,11 @@
   import { selectionMask } from '../../core/controller';
 
   let canvas: HTMLCanvasElement;
-  // Boundary of the committed selection, rebuilt only when the document changes.
-  let selectionPath: Path2D | null = null;
+  // Boundary of the committed selection, rebuilt only when the document
+  // changes ($state so the animation effect reacts to it).
+  let selectionPath = $state<Path2D | null>(null);
   let raf = 0;
+  let running = false;
   let dashOffset = 0;
 
   /** Traces the boundary edges of the committed selection mask. */
@@ -155,15 +157,37 @@
     }
   }
 
+  /** Whether anything is on the overlay (else the animation loop idles). */
+  function hasContent(): boolean {
+    return (
+      selectionPath !== null || selectionPreview.value !== null || shapePreview.value !== null
+    );
+  }
+
+  // The dash animation only runs while there is something to animate; an idle
+  // editor burns no frames.
   function loop(): void {
     dashOffset = (dashOffset + 0.5) % 8;
     draw();
-    raf = requestAnimationFrame(loop);
+    if (hasContent()) {
+      raf = requestAnimationFrame(loop);
+    } else {
+      running = false;
+    }
   }
 
-  onMount(() => {
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
+  onMount(() => () => cancelAnimationFrame(raf));
+
+  // Start the animation when overlay content appears; clear once when it goes.
+  $effect(() => {
+    if (hasContent()) {
+      if (!running) {
+        running = true;
+        raf = requestAnimationFrame(loop);
+      }
+    } else {
+      draw();
+    }
   });
 
   // Match the backing store to the document size.
