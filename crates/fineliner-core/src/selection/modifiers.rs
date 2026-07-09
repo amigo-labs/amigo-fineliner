@@ -8,6 +8,13 @@
 
 use super::SelectionMask;
 
+/// Bounds a caller-supplied radius to the mask extent. Beyond that the window
+/// already spans every row/column, and on 32-bit targets (wasm32) an unbounded
+/// radius would overflow the `x + r` window arithmetic.
+fn clamp_radius(radius: u32, w: usize, h: usize) -> usize {
+    (radius as usize).min(w.max(h))
+}
+
 /// Maximum over a horizontal window of radius `r`, row by row.
 fn horizontal_max(src: &[u8], w: usize, h: usize, r: usize) -> Vec<u8> {
     let mut out = vec![0u8; src.len()];
@@ -81,11 +88,8 @@ impl SelectionMask {
         if radius == 0 {
             return;
         }
-        let (w, h, r) = (
-            self.width() as usize,
-            self.height() as usize,
-            radius as usize,
-        );
+        let (w, h) = (self.width() as usize, self.height() as usize);
+        let r = clamp_radius(radius, w, h);
         let pass = horizontal_max(self.data(), w, h, r);
         let t = transpose(&pass, w, h);
         let t = horizontal_max(&t, h, w, r);
@@ -97,11 +101,8 @@ impl SelectionMask {
         if radius == 0 {
             return;
         }
-        let (w, h, r) = (
-            self.width() as usize,
-            self.height() as usize,
-            radius as usize,
-        );
+        let (w, h) = (self.width() as usize, self.height() as usize);
+        let r = clamp_radius(radius, w, h);
         let pass = horizontal_min(self.data(), w, h, r);
         let t = transpose(&pass, w, h);
         let t = horizontal_min(&t, h, w, r);
@@ -116,11 +117,8 @@ impl SelectionMask {
         if radius == 0 {
             return;
         }
-        let (w, h, r) = (
-            self.width() as usize,
-            self.height() as usize,
-            radius as usize,
-        );
+        let (w, h) = (self.width() as usize, self.height() as usize);
+        let r = clamp_radius(radius, w, h);
         let mut buf = self.data().to_vec();
         for _ in 0..3 {
             buf = horizontal_box(&buf, w, h, r);
@@ -167,6 +165,13 @@ mod tests {
         m.contract(2);
         // A morphological close of a solid block restores it exactly.
         assert_eq!(m.selected_count(), original.selected_count());
+    }
+
+    #[test]
+    fn expand_with_huge_radius_selects_everything_without_overflow() {
+        let mut m = SelectionMask::rectangle(20, 20, Rect::new(8, 8, 4, 4));
+        m.expand(u32::MAX);
+        assert_eq!(m.selected_count(), 20 * 20);
     }
 
     #[test]
