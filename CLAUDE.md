@@ -741,6 +741,20 @@ ADR-013: WASM shapes/text API for M10 — 2026-05
             (font blobs are large); this matches ADR-012's caller-supplies-font
             choice. Strings for kind/mode/dash/align follow the established
             tool-option convention.
+
+ADR-014: CommandSpec TypeScript mirror is generated via ts-rs — 2026-07
+  Decision: fineliner-wasm gains ts-rs as a test-gated dev-dependency
+            (cfg_attr(test) derive, so it never enters the wasm build). The
+            test export_command_spec_bindings writes ui/src/lib/core/generated/
+            CommandSpec.ts (committed; u64 exports as `number`), and
+            ui/src/lib/core/generated-check.ts asserts at type level that the
+            hand-written command types in wasm.ts match it: discriminant sets,
+            field names, and field types. CI regenerates the file and fails on
+            a dirty diff.
+  Rationale: The ~40 hand-mirrored command types had no coupling to the Rust
+            enum, and serde defaults swallow drift silently. The first export
+            immediately caught a real bug (the rotate_layer_90 wire tag).
+            Approved as a new dev dependency per §9 (explicit user sign-off).
 ```
 
 ---
