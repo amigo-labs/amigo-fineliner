@@ -30,6 +30,7 @@ mod error;
 mod image;
 mod kernel;
 
+pub mod adjust;
 pub mod blur;
 pub mod distort;
 pub mod noise;
