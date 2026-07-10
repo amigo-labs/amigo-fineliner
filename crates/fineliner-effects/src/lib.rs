@@ -31,6 +31,7 @@ mod image;
 mod kernel;
 
 pub mod blur;
+pub mod distort;
 pub mod sharpen;
 
 pub use effect::Effect;
