@@ -372,14 +372,60 @@ description.
 - Liberation Sans committed twice (ui asset + core test fixture, 404 KB each)
   — test-fixture isolation is intentional.
 
-## Next concrete task — M11 (fineliner-effects crate)
+## M11 — fineliner-effects crate (in progress: skeleton + blur landed)
 
-New crate `fineliner-effects` (independent of core, ADR-002): Blur (Gaussian,
-Box, Motion, Radial), Sharpen (Unsharp Mask, Convolution), Distort (Emboss, Edge
-Detect, Relief), Noise (Add/Reduce). Each effect: params struct, `apply()`,
-`preview()` (downscaled), Criterion bench, identity tests (σ=0, 1×1 kernel).
-This is a new crate + new public API surface — plan the task checklist before
-starting and stop at the crate-skeleton milestone for review (CLAUDE.md §3.3).
+New crate `fineliner-effects`, independent of core (ADR-002). Stopped at the
+crate-skeleton milestone for review of the public API surface before the
+remaining three effect groups are built on top of it (CLAUDE.md §3.3).
+
+- [x] **Crate skeleton** (`image.rs`, `effect.rs`, `error.rs`, `lib.rs`):
+  `EffectImage` (owned RGBA8 buffer, own byte layout matching core's so a
+  layer's pixels cross in without reinterpretation) with premultiplied-alpha
+  f32 conversions and a bilinear `resized`; the `Effect` trait
+  (`apply(&EffectImage) -> EffectImage` + `scaled(factor)`, with a provided
+  `preview(src, max_dim)` that runs on a downscaled copy); `EffectError`.
+  std-only, no new deps (thiserror is already a workspace dep). Added to the
+  workspace members. **ADR-015** pins the colour-space/alpha convention
+  (premultiplied, gamma/sRGB space).
+- [x] **Blur group** (`blur/`): `GaussianBlur` (separable kernel, σ=radius/3),
+  `BoxBlur` (odd width/height, separable uniform), `MotionBlur`
+  (distance/angle line average, bilinear samples), `RadialBlur`
+  (Spin/Zoom about a centre). Shared `convolve_axis` + `sample_bilinear`
+  helpers. 21 tests incl. the mandated identities (Gaussian σ=0, Box 1×1)
+  plus solid-colour invariance and directional/spread checks.
+
+### Verification (M11 skeleton + blur)
+
+- `cargo test -p fineliner-effects` green (21 tests); `cargo test --workspace`
+  green (203 core + 21 effects + 2 wasm); `cargo clippy --workspace
+  --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+### Next concrete tasks — remaining M11 + wiring
+
+Build on the reviewed skeleton (each: params struct, `apply`, `scaled`,
+identity/qualitative tests):
+
+- [ ] **Sharpen group** (`sharpen/`): `UnsharpMask` (amount/radius/threshold,
+  reuses `GaussianBlur` for the low-pass), `Sharpen` (fixed 3×3 convolution,
+  parameterless → `scaled` returns self). Test: sharpen counteracts a mild
+  blur (qualitative).
+- [ ] **Distort group** (`distort/`): `Emboss` (angle/elevation/relief),
+  `EdgeDetect` (Sobel/Prewitt/Laplacian, amount), `Relief`. A shared 3×3
+  convolution helper.
+- [ ] **Noise group** (`noise/`): `AddNoise` (amount, Uniform/Gaussian,
+  RGB/Monochromatic, seed → deterministic inline xorshift PRNG, no `rand`
+  dep), `ReduceNoise` (median filter, radius). Test: add-noise with a fixed
+  seed is reproducible; median of a spike removes it.
+- [ ] **WASM bindings** (spec §17.5): `apply_effect(handle, layer_id, effect)`
+  and `preview_effect(handle, layer_id, effect, max_dim)`; `SerializedEffect`
+  JSON. Needs a per-layer pixel read/write path (only composite + 32×32
+  thumbnails cross the boundary today). New API surface → ADR + stop.
+- [ ] **UI** (spec §11): Effects menu + a shared effect dialog (parameter
+  controls, 300 ms-debounced live preview via `preview_effect`, OK/Cancel).
+
+Deferred with M16 (per backlog): Criterion benches (`benches/` does not exist
+yet); real premultiplied handling for the preview downscale (currently straight
+bilinear — approximate, fine for a thumbnail).
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer

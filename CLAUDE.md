@@ -755,6 +755,27 @@ ADR-014: CommandSpec TypeScript mirror is generated via ts-rs — 2026-07
             enum, and serde defaults swallow drift silently. The first export
             immediately caught a real bug (the rotate_layer_90 wire tag).
             Approved as a new dev dependency per §9 (explicit user sign-off).
+
+ADR-015: Effects run in premultiplied-alpha gamma space — 2026-07
+  Decision: fineliner-effects converts RGBA8 → RGBA32f in [0,1] on entry and
+            back on exit (spec §4.1). Spatial effects (blur, and later
+            sharpen/distort/noise convolutions and resampling) operate in
+            PREMULTIPLIED alpha so the arbitrary colour of fully transparent
+            pixels never bleeds into opaque neighbours, and in GAMMA (sRGB)
+            space — effects do NOT linearise. The crate defines its own
+            EffectImage buffer (no fineliner-core dependency, ADR-002); its
+            byte layout matches core's ImageBuffer so a layer's pixels cross in
+            without reinterpretation. The Effect trait is `apply(&EffectImage)
+            -> EffectImage` plus `scaled(factor)` so the provided `preview(src,
+            max_dim)` runs the effect on a downscaled copy with matching
+            parameters.
+  Rationale: Premultiplied convolution is the standard fix for transparent-edge
+            fringing. Gamma-space blur matches paint.net (Fineliner's model)
+            and keeps the effect pipeline independent of the compositor's
+            linear-light blending (render::compose stays the only linear-light
+            path); a colour-math choice that affects every effect, so it is
+            pinned once here per §12. std-only, no new runtime deps (thiserror
+            is already a workspace dependency, ADR-005).
 ```
 
 ---
@@ -784,7 +805,7 @@ README.md                       Prerequisites, clone→run, verification
 .claude/skills/                 Project-specific skill recipes (planned, §14)
 
 crates/fineliner-core/          Pure logic, no I/O, no platform
-crates/fineliner-effects/       Stateless image effects + adjustments (planned, M11)
+crates/fineliner-effects/       Stateless image effects + adjustments (M11 WIP: blur landed)
 crates/fineliner-wasm/          wasm-bindgen layer, cdylib
 
 ui/                             Svelte 5 + Vite frontend (PWA)
@@ -803,4 +824,4 @@ wrangler.toml                   Cloudflare Pages deployment config (planned, M15
 
 ---
 
-*Last updated: 2026-05. Amend in place via PR. Significant changes get a Decision Log entry (§13).*
+*Last updated: 2026-07. Amend in place via PR. Significant changes get a Decision Log entry (§13).*
