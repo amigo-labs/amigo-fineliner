@@ -29,6 +29,8 @@ mod effect;
 mod error;
 mod image;
 
+pub mod blur;
+
 pub use effect::Effect;
 pub use error::EffectError;
 pub use image::EffectImage;
