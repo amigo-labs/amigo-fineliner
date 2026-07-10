@@ -28,8 +28,10 @@
 mod effect;
 mod error;
 mod image;
+mod kernel;
 
 pub mod blur;
+pub mod sharpen;
 
 pub use effect::Effect;
 pub use error::EffectError;
