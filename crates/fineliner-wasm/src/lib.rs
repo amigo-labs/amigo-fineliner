@@ -17,6 +17,10 @@ use fineliner_core::{
     Interpolation, Move, Pencil, Point, Rect, SampleSize, SampleSource, SelectionMask,
     SelectionMode, Shape, ShapeMode, ShapeStyle, Shapes, Text, TextAlign, TextStyle,
 };
+use fineliner_effects::adjust::{
+    BrightnessContrast, ColorBalance, CurveChannel, Curves, Grayscale, GrayscaleMethod,
+    HueSaturation, Invert, Levels, LevelsChannel, Posterize, Threshold,
+};
 use fineliner_effects::blur::{BoxBlur, GaussianBlur, MotionBlur, RadialBlur, RadialKind};
 use fineliner_effects::distort::{EdgeAlgorithm, EdgeDetect, Emboss, Relief};
 use fineliner_effects::noise::{AddNoise, NoiseChannels, NoiseType, ReduceNoise};
@@ -1032,6 +1036,48 @@ enum EffectSpec {
     },
     /// Reduce noise via a median filter of the given radius.
     ReduceNoise { radius: u32 },
+    /// Brightness/contrast (−150..150 each); `enhanced` uses an S-curve.
+    BrightnessContrast {
+        brightness: f32,
+        contrast: f32,
+        enhanced: bool,
+    },
+    /// Hue/saturation/lightness in HSL; `colorize` sets a single hue.
+    HueSaturation {
+        hue: f32,
+        saturation: f32,
+        lightness: f32,
+        colorize: bool,
+    },
+    /// Per-channel tone curve; `channel` is composite/red/green/blue/alpha.
+    Curves {
+        channel: String,
+        points: Vec<[f32; 2]>,
+    },
+    /// Levels remap; `channel` is composite/red/green/blue.
+    Levels {
+        channel: String,
+        in_black: f32,
+        in_white: f32,
+        gamma: f32,
+        out_black: f32,
+        out_white: f32,
+    },
+    /// Color balance shifts per tone range (each `[cr, mg, yb]`, −100..100).
+    ColorBalance {
+        shadows: [f32; 3],
+        midtones: [f32; 3],
+        highlights: [f32; 3],
+        preserve_luminosity: bool,
+    },
+    /// Invert RGB (no parameters).
+    Invert,
+    /// Grayscale; `method` is luminosity/average/bt709/channel_mixer.
+    Grayscale { method: String, mixer: [f32; 3] },
+    /// Posterize to N levels (2–255).
+    Posterize { levels: u32 },
+    /// Threshold by luminance (0–255).
+    Threshold { threshold: u8 },
 }
 
 /// Parses a radial-blur kind string; defaults to Spin.
@@ -1064,6 +1110,37 @@ fn parse_noise_channels(s: &str) -> NoiseChannels {
     match s {
         "monochromatic" => NoiseChannels::Monochromatic,
         _ => NoiseChannels::Rgb,
+    }
+}
+
+/// Parses a curve channel string; defaults to Composite.
+fn parse_curve_channel(s: &str) -> CurveChannel {
+    match s {
+        "red" => CurveChannel::Red,
+        "green" => CurveChannel::Green,
+        "blue" => CurveChannel::Blue,
+        "alpha" => CurveChannel::Alpha,
+        _ => CurveChannel::Composite,
+    }
+}
+
+/// Parses a levels channel string; defaults to Composite.
+fn parse_levels_channel(s: &str) -> LevelsChannel {
+    match s {
+        "red" => LevelsChannel::Red,
+        "green" => LevelsChannel::Green,
+        "blue" => LevelsChannel::Blue,
+        _ => LevelsChannel::Composite,
+    }
+}
+
+/// Parses a grayscale method string; defaults to Luminosity.
+fn parse_grayscale_method(s: &str) -> GrayscaleMethod {
+    match s {
+        "average" => GrayscaleMethod::Average,
+        "bt709" => GrayscaleMethod::Bt709,
+        "channel_mixer" => GrayscaleMethod::ChannelMixer,
+        _ => GrayscaleMethod::Luminosity,
     }
 }
 
@@ -1107,6 +1184,68 @@ fn run_effect(spec: &EffectSpec, src: &EffectImage) -> EffectImage {
         )
         .apply(src),
         EffectSpec::ReduceNoise { radius } => ReduceNoise::new(*radius).apply(src),
+        EffectSpec::BrightnessContrast {
+            brightness,
+            contrast,
+            enhanced,
+        } => {
+            let bc = BrightnessContrast::new(*brightness, *contrast);
+            let bc = if *enhanced { bc.enhanced() } else { bc };
+            bc.apply(src)
+        }
+        EffectSpec::HueSaturation {
+            hue,
+            saturation,
+            lightness,
+            colorize,
+        } => {
+            let hs = HueSaturation::new(*hue, *saturation, *lightness);
+            let hs = if *colorize { hs.colorize() } else { hs };
+            hs.apply(src)
+        }
+        EffectSpec::Curves { channel, points } => {
+            Curves::new(parse_curve_channel(channel), points.clone()).apply(src)
+        }
+        EffectSpec::Levels {
+            channel,
+            in_black,
+            in_white,
+            gamma,
+            out_black,
+            out_white,
+        } => Levels::new(
+            parse_levels_channel(channel),
+            *in_black,
+            *in_white,
+            *gamma,
+            *out_black,
+            *out_white,
+        )
+        .apply(src),
+        EffectSpec::ColorBalance {
+            shadows,
+            midtones,
+            highlights,
+            preserve_luminosity,
+        } => {
+            let cb = ColorBalance::new(*shadows, *midtones, *highlights);
+            let cb = if *preserve_luminosity {
+                cb.preserve_luminosity()
+            } else {
+                cb
+            };
+            cb.apply(src)
+        }
+        EffectSpec::Invert => Invert.apply(src),
+        EffectSpec::Grayscale { method, mixer } => {
+            let g = match parse_grayscale_method(method) {
+                GrayscaleMethod::ChannelMixer => Grayscale::mixer(*mixer),
+                m => Grayscale::new(m),
+            };
+            g.apply(src)
+        }
+        EffectSpec::Posterize { levels } => Posterize::new(*levels).apply(src),
+        EffectSpec::Threshold { threshold } => Threshold::new(*threshold).apply(src),
     }
 }
 
@@ -1124,6 +1263,15 @@ fn effect_label(spec: &EffectSpec) -> &'static str {
         EffectSpec::Relief { .. } => "Relief",
         EffectSpec::AddNoise { .. } => "Add Noise",
         EffectSpec::ReduceNoise { .. } => "Reduce Noise",
+        EffectSpec::BrightnessContrast { .. } => "Brightness/Contrast",
+        EffectSpec::HueSaturation { .. } => "Hue/Saturation",
+        EffectSpec::Curves { .. } => "Curves",
+        EffectSpec::Levels { .. } => "Levels",
+        EffectSpec::ColorBalance { .. } => "Color Balance",
+        EffectSpec::Invert => "Invert",
+        EffectSpec::Grayscale { .. } => "Grayscale",
+        EffectSpec::Posterize { .. } => "Posterize",
+        EffectSpec::Threshold { .. } => "Threshold",
     }
 }
 
