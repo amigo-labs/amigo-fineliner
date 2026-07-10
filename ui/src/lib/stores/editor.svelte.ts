@@ -24,6 +24,9 @@ export const editor = $state({
   hasSelection: false,
   /** Bumped after every mutation so the canvas and thumbnails refresh. */
   revision: 0,
+  /** A live effect preview composite that overrides the canvas while an effect
+   * dialog is open; `null` shows the real composite (spec §11 live preview). */
+  previewComposite: null as Uint8ClampedArray | null,
 });
 
 /** Transient UI chrome state (not document state). */
@@ -31,6 +34,19 @@ export const ui = $state({
   /** True while a modal dialog is open; global shortcuts are suppressed. */
   modalOpen: false,
 });
+
+/** Canvas view transform (spec §6.4). `fit` re-centres/-scales to the viewport
+ * until the user zooms or pans. Zoom is display px per document px. */
+export const view = $state({
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+  fit: true,
+});
+
+/** Zoom limits (spec §6.4: fit to 6400 %-ish). */
+export const MIN_ZOOM = 0.02;
+export const MAX_ZOOM = 64;
 
 /** The selectable tools (spec §9.2 / §16.2). */
 export type ToolKind =

@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/fineliner-core",
+    "crates/fineliner-effects",
     "crates/fineliner-wasm",
 ]
 

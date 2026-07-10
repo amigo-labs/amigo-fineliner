@@ -27,6 +27,8 @@
   import ColorsPanel from './lib/components/panels/ColorsPanel.svelte';
   import LayersPanel from './lib/components/panels/LayersPanel.svelte';
   import TransformMenu from './lib/components/menus/TransformMenu.svelte';
+  import EffectsMenu from './lib/components/menus/EffectsMenu.svelte';
+  import { ADJUSTMENT_GROUPS } from './lib/components/menus/adjustments';
   import ExportDialog from './lib/components/dialogs/ExportDialog.svelte';
 
   let fileInput: HTMLInputElement;
@@ -224,6 +226,8 @@
     </button>
     <div class="mx-2 h-5 w-px bg-[var(--fl-panel-border)]"></div>
     <TransformMenu />
+    <EffectsMenu />
+    <EffectsMenu label="Adjustments" groups={ADJUSTMENT_GROUPS} />
     <input
       bind:this={fileInput}
       type="file"

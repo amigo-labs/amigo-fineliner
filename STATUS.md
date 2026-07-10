@@ -275,7 +275,7 @@ approved (ab_glyph) with the UI supplying font bytes (Option B), per ADR-012.
   rich on-canvas caret/IME is a later polish item.
 - Dash stepping is O(pixels × on-segments); fine for Phase 1, an M16 concern.
 
-## Deep fixup — round 2 (2026-07, PLAN.md)
+## Deep fixup — round 2 (2026-07)
 
 Three parallel audits (UI, core/WASM, DX) with line-level verification, then a
 full fixup pass. All findings fixed and verified end-to-end (cargo gate, node
@@ -317,9 +317,10 @@ description.
 
 ### Feature gaps (spec-mandated, deferred)
 
-- **Zoom / pan** (spec §16.1) — the canvas is scaled-to-fit only; the single
-  biggest UX gap. Needs a view transform in `MainCanvas`/`CanvasOverlay` and
-  `toCanvasPoint`. M-sized.
+- ~~**Zoom / pan** (spec §16.1)~~ — **DONE** (2026-07): view transform in the
+  store; wheel-to-cursor zoom, middle-drag pan, corner control (−/+/fit/1:1),
+  auto-fit on open + resize. Follow-ups: keyboard shortcuts (Ctrl+0/±) and a
+  space-drag hand, status-bar zoom %/cursor coords.
 - **New-document size dialog** — `New` is fixed 800×600; the `Modal` shell
   from round 2 makes this an S task now.
 - **Move-tool ghost preview** (spec §9.2) — needs a per-layer pixel read API
@@ -372,14 +373,115 @@ description.
 - Liberation Sans committed twice (ui asset + core test fixture, 404 KB each)
   — test-fixture isolation is intentional.
 
-## Next concrete task — M11 (fineliner-effects crate)
+## M11 — fineliner-effects crate (effects core COMPLETE; WASM+UI remain)
 
-New crate `fineliner-effects` (independent of core, ADR-002): Blur (Gaussian,
-Box, Motion, Radial), Sharpen (Unsharp Mask, Convolution), Distort (Emboss, Edge
-Detect, Relief), Noise (Add/Reduce). Each effect: params struct, `apply()`,
-`preview()` (downscaled), Criterion bench, identity tests (σ=0, 1×1 kernel).
-This is a new crate + new public API surface — plan the task checklist before
-starting and stop at the crate-skeleton milestone for review (CLAUDE.md §3.3).
+New crate `fineliner-effects`, independent of core (ADR-002). All four effect
+groups are implemented, tested, and committed (43 tests). **ADR-015** pins the
+colour-space/alpha convention (premultiplied, gamma/sRGB space).
+
+- [x] **Crate skeleton** (`image.rs`, `effect.rs`, `error.rs`, `kernel.rs`,
+  `lib.rs`): `EffectImage` (owned RGBA8, byte layout matching core's) with
+  premultiplied-alpha f32 conversions and a bilinear `resized`; the `Effect`
+  trait (`apply` + `scaled`, provided `preview`); `EffectError`; shared
+  `convolve_3x3`. std-only, no new deps.
+- [x] **Blur group** (`blur/`): Gaussian (σ=radius/3), Box (odd w/h), Motion
+  (distance/angle), Radial (Spin/Zoom). Shared `convolve_axis` +
+  `sample_bilinear`.
+- [x] **Sharpen group** (`sharpen/`): `Sharpen` (fixed 3×3) and `UnsharpMask`
+  (amount/radius/threshold, Gaussian low-pass, luminance-gated).
+- [x] **Distort group** (`distort/`): `Emboss` (angle/elevation/relief),
+  `EdgeDetect` (Sobel/Prewitt/Laplacian + amount), `Relief` (colour-preserving
+  directional emboss). Shared `luma_at` + normalised `gradient`.
+- [x] **Noise group** (`noise/`): `AddNoise` (Uniform/Gaussian, RGB/Mono,
+  seeded xorshift64* PRNG — no `rand` dep) and `ReduceNoise` (median filter).
+
+### Verification (M11 effects core)
+
+- `cargo test -p fineliner-effects` green (43 tests, incl. mandated identities
+  Gaussian σ=0 / Box 1×1); `cargo test --workspace` green; `cargo clippy
+  --workspace --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+
+### M11 wiring — DONE
+
+- [x] **WASM bindings** (ADR-017, spec §17.5): `fineliner-effects` added as a
+  wasm dep; `apply_effect(handle, layer, effect)` runs the effect on the target
+  layer's pixels as one undoable `SetPixels`; `preview_effect(handle, layer,
+  effect)` composites the doc with that layer replaced and returns canvas-sized
+  RGBA8 (no mutation). `EffectSpec` JSON (11 variants) with a ts-rs-generated
+  mirror + drift check. Layer by index; preview full-size (max_dim → M16).
+- [x] **UI** (spec §11): Effects menu (`EffectsMenu.svelte`, grouped
+  Blur/Sharpen/Distort/Noise) + shared `EffectDialog.svelte` (per-effect
+  parameter controls from `effects.ts`, 120 ms-debounced live preview via a
+  `previewComposite` override on the canvas, Apply/Cancel). Controller gains
+  `applyEffect`/`previewEffect`/`clearEffectPreview`.
+
+### Verification (M11 wiring)
+
+- `cargo test -p fineliner-wasm` green (ts-rs mirror regenerated); `cargo clippy
+  --workspace --all-targets -- -D warnings` clean.
+- `pnpm` (wasm:dev build) + `svelte-check` = 0 errors / 0 warnings; `vite build`
+  succeeds.
+- Node smoke test through the real WASM boundary: preview returns a canvas-sized
+  buffer and does not mutate; Gaussian blur changes the composite and spreads
+  alpha; undo restores the pre-effect composite exactly; sharpen/emboss/
+  edge-detect/add-noise/reduce-noise all apply + undo cleanly.
+- **Not yet done by a human:** visual browser run of the Effects menu/dialog.
+
+**M11 is complete.** Deferred with M16 (per backlog): Criterion benches
+(`benches/` does not exist yet); premultiplied preview downscale (currently
+straight bilinear); radial-blur centre picking in the UI (defaults to canvas
+centre).
+
+## M12 — adjustments (COMPLETE)
+
+All 9 adjustments (spec §12), routed through the same layer-targeting
+apply_effect/preview_effect path as effects (EffectSpec gained the variants).
+
+- [x] **Core** (`fineliner-effects/src/adjust/`): Brightness/Contrast (Legacy +
+  Enhanced S-curve), Hue/Saturation/Lightness (+colorize, HSL), Curves (monotone
+  cubic spline → LUT, per channel incl. alpha), Levels (in/gamma/out → LUT),
+  Color Balance (per-tone-range shifts + optional preserve-luminosity), Invert,
+  Grayscale (Luminosity/Average/BT.709/Channel Mixer), Posterize, Threshold.
+  Per-pixel, gamma space, alpha preserved; `scaled` = identity. 25 tests incl.
+  the mandated invert∘invert=id, curves identity, grayscale luma.
+- [x] **WASM**: 9 EffectSpec variants + ts-rs mirror; channel/method as
+  snake_case strings.
+- [x] **UI**: Adjustments menu (grouped Tone/Color/Stylize) reusing the effect
+  dialog. The dialog's field system gained boolean toggles and array-element
+  (index) fields (Color Balance, enhanced/colorize/preserve flags). Curves are
+  exposed as presets (Increase Contrast / Lighten / Darken) in Phase 1.
+
+### Verification (M12)
+
+- `cargo test --workspace` green (68 effects tests); `clippy`/`fmt` clean;
+  `svelte-check` 0/0; `vite build` ok. Node WASM smoke test: invert∘invert =
+  identity, grayscale → R=G=B, curves identity no-op, levels preview non-mutating
+  canvas-sized, and color-balance/brightness/hue/posterize/threshold apply+undo
+  back to the exact original.
+- **Deferred (Phase 2 / follow-up):** a graphical Curves editor (presets only
+  now); a custom Grayscale channel-mixer UI (fixed methods now); larger
+  Color-Balance layout polish. All reachable via the WASM API regardless.
+- **Not yet done by a human:** visual browser run of the Adjustments menu.
+
+## Release automation + Cloudflare deploy (LIVE)
+
+- [x] **Auto-publish on push to main** (ADR-016, `.github/workflows/
+  release.yml`): tag-based patch increment (highest `vX.Y.Z` + 1, seeded
+  v0.1.0), builds the PWA bundle, cuts a GitHub Release with generated notes +
+  `fineliner-web-<version>.zip`. Works with the built-in `GITHUB_TOKEN`.
+- [x] **Cloudflare Workers deploy — GREEN** (2026-07): pushes deploy the PWA
+  live via Cloudflare's Workers Builds Git integration. The root `package.json`
+  `build` script runs `scripts/cf-build.sh` (installs Rust/wasm-pack, builds
+  `ui/dist`); `wrangler.jsonc` serves `ui/dist` as an SPA. First successful
+  deploy at commit c2ce643. No dashboard change was needed.
+- [x] **Default build command works (no dashboard change).** The Cloudflare
+  build ran `bun run build` at the repo root and failed ("Script not found
+  build") because package.json lived only in `ui/`. Added a root `package.json`
+  whose `build` script runs `scripts/cf-build.sh`, so the default command now
+  resolves and installs Rust/wasm-pack before building `ui/dist`. If the build
+  still fails, the Cloudflare log shows the next step (likely toolchain/time).
+- [ ] **Optional:** limit Git-integration deploys to the `main` branch (it
+  currently builds PR branches as "production").
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer

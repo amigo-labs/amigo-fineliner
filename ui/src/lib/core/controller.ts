@@ -17,6 +17,7 @@ import {
   type Rgba,
   type DrawShapeCommand,
   type DrawTextCommand,
+  type EffectCommand,
 } from './wasm';
 import { editor, tool } from '../stores/editor.svelte';
 
@@ -295,6 +296,34 @@ export function resizeCanvas(width: number, height: number, anchor: ResizeAnchor
 /** Crops the canvas to the current selection's bounding box (spec §10.6). */
 export function cropToSelection(): void {
   applyTransform({ type: 'crop_to_selection' });
+}
+
+/** Applies an effect to the active layer as one undoable step (spec §11). */
+export function applyEffect(effect: EffectCommand): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyEffect(editor.handle, editor.activeLayer, effect);
+  editor.previewComposite = null;
+  syncInfo();
+}
+
+/** Sets the live effect preview over the canvas without mutating the document
+ * (spec §11 live preview). Call from an open effect dialog. */
+export function previewEffect(effect: EffectCommand): void {
+  if (editor.handle === null) {
+    return;
+  }
+  editor.previewComposite = core.previewEffect(editor.handle, editor.activeLayer, effect);
+  editor.revision += 1;
+}
+
+/** Clears any live effect preview and restores the real composite. */
+export function clearEffectPreview(): void {
+  if (editor.previewComposite !== null) {
+    editor.previewComposite = null;
+    editor.revision += 1;
+  }
 }
 
 /** Draws the active shape between two canvas-space points (spec §9.2 Shapes).

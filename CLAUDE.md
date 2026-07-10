@@ -755,6 +755,77 @@ ADR-014: CommandSpec TypeScript mirror is generated via ts-rs — 2026-07
             enum, and serde defaults swallow drift silently. The first export
             immediately caught a real bug (the rotate_layer_90 wire tag).
             Approved as a new dev dependency per §9 (explicit user sign-off).
+
+ADR-015: Effects run in premultiplied-alpha gamma space — 2026-07
+  Decision: fineliner-effects converts RGBA8 → RGBA32f in [0,1] on entry and
+            back on exit (spec §4.1). Spatial effects (blur, and later
+            sharpen/distort/noise convolutions and resampling) operate in
+            PREMULTIPLIED alpha so the arbitrary colour of fully transparent
+            pixels never bleeds into opaque neighbours, and in GAMMA (sRGB)
+            space — effects do NOT linearise. The crate defines its own
+            EffectImage buffer (no fineliner-core dependency, ADR-002); its
+            byte layout matches core's ImageBuffer so a layer's pixels cross in
+            without reinterpretation. The Effect trait is `apply(&EffectImage)
+            -> EffectImage` plus `scaled(factor)` so the provided `preview(src,
+            max_dim)` runs the effect on a downscaled copy with matching
+            parameters.
+  Rationale: Premultiplied convolution is the standard fix for transparent-edge
+            fringing. Gamma-space blur matches paint.net (Fineliner's model)
+            and keeps the effect pipeline independent of the compositor's
+            linear-light blending (render::compose stays the only linear-light
+            path); a colour-math choice that affects every effect, so it is
+            pinned once here per §12. std-only, no new runtime deps (thiserror
+            is already a workspace dependency, ADR-005).
+
+ADR-016: Pushes to main auto-publish a version — 2026-07
+  Decision: .github/workflows/release.yml triggers on push to main and cuts a
+            GitHub Release. Versioning is tag-based auto patch-increment (the
+            highest existing vX.Y.Z tag + 1, seeded at v0.1.0), so CI never
+            commits back to main. The workflow builds the PWA bundle (same steps
+            as the CI ui job) and attaches it as fineliner-web-<version>.zip;
+            release notes are gh's --generate-notes. Minor/major bumps are done
+            by hand-tagging (push a vX.Y.0 tag) — the next push increments from
+            there. The live PWA deploy (spec M15) runs through Cloudflare's own
+            Workers Builds Git integration, not this workflow. A root
+            package.json "build" script runs scripts/cf-build.sh (installs the
+            Rust/wasm-pack toolchain the Cloudflare build image lacks, then
+            `pnpm build` → ./ui/dist), so Cloudflare's default `bun/npm run
+            build` works with no dashboard change; deploy uses wrangler.jsonc
+            (static assets, SPA fallback). This workflow only cuts the GitHub
+            Release. npm publish of fineliner-wasm remains a later add-on.
+  Rationale: Tag-based bumping is self-contained (no commit-back loop, no
+            write-to-protected-main), works today with only the built-in
+            GITHUB_TOKEN, and keeps every main commit a shippable, downloadable
+            build. The commit convention here ([crate] action) is not Angular
+            Conventional Commits, so semantic-release's feat/fix parsing does
+            not apply; auto-patch + manual minor/major tags is the pragmatic
+            fit. Chosen autonomously (the clarifying question could not be
+            delivered); revisit if a different scheme or publish target is
+            wanted.
+
+ADR-017: WASM effects API for M11 — 2026-07
+  Decision: fineliner-wasm gains a fineliner-effects dependency and two exports
+            (spec §17.5): apply_effect(handle, layer, effect) runs the effect on
+            the target layer's pixels and commits it as one undoable SetPixels
+            over the whole canvas; preview_effect(handle, layer, effect)
+            composites the document with that layer's pixels replaced and
+            returns canvas-sized RGBA8, without touching document state or the
+            undo stack. `effect` is a JSON EffectSpec enum (tag "type",
+            snake_case) whose TypeScript mirror is generated via ts-rs alongside
+            CommandSpec (ADR-014); the sub-choices (radial kind, edge algorithm,
+            noise type/channels) cross as snake_case strings. Two deviations
+            from the spec §17.5 signatures: the target layer is passed by index
+            (matching every other CommandSpec, not layer_id), and preview_effect
+            omits max_dim (it returns the full-size composite for a crisp live
+            preview; the crate's scaled()/preview() downscaling is reserved for
+            the M16 performance pass).
+  Rationale: Routing apply through SetPixels reuses the existing lazy
+            before-capture undo path and keeps the "effects target a layer,
+            never the composite" invariant (§9). Compositing a cloned layer set
+            for preview needs no new core API (Document/Layer are Clone) and
+            shows the true result through blend modes and opacity. Indices and
+            snake_case strings follow the established tool-option/command
+            convention.
 ```
 
 ---
@@ -784,7 +855,7 @@ README.md                       Prerequisites, clone→run, verification
 .claude/skills/                 Project-specific skill recipes (planned, §14)
 
 crates/fineliner-core/          Pure logic, no I/O, no platform
-crates/fineliner-effects/       Stateless image effects + adjustments (planned, M11)
+crates/fineliner-effects/       Stateless image effects + adjustments (M11 WIP: blur landed)
 crates/fineliner-wasm/          wasm-bindgen layer, cdylib
 
 ui/                             Svelte 5 + Vite frontend (PWA)
@@ -803,4 +874,4 @@ wrangler.toml                   Cloudflare Pages deployment config (planned, M15
 
 ---
 
-*Last updated: 2026-05. Amend in place via PR. Significant changes get a Decision Log entry (§13).*
+*Last updated: 2026-07. Amend in place via PR. Significant changes get a Decision Log entry (§13).*

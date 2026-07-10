@@ -16,6 +16,7 @@ wasm-opt = false
 
 [dependencies]
 fineliner-core = { path = "../fineliner-core" }
+fineliner-effects = { path = "../fineliner-effects" }
 # Enables uuid's JS getrandom backend so v4 UUIDs work under wasm32 (ADR-005).
 uuid = { workspace = true, features = ["js"] }
 wasm-bindgen = "0.2"
