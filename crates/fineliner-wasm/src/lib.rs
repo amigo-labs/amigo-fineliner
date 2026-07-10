@@ -9,7 +9,7 @@ use fineliner_core::command::{
     AddLayer, Anchor, CanvasRotation, CommandBus, CropToSelection, DuplicateLayer, FlattenImage,
     FlipCanvas, LayerTransform, MergeDown, MergeVisible, MoveLayer, RemoveLayer, RenameLayer,
     ResizeCanvas, RotateCanvas, RotateLayer90, ScaleImage, SetLayerBlendMode, SetLayerLocked,
-    SetLayerOpacity, SetLayerVisible, SetSelection, TransformLayer,
+    SetLayerOpacity, SetLayerVisible, SetPixels, SetSelection, TransformLayer,
 };
 use fineliner_core::{
     apply_mode, compose, delete_selection, magic_wand, BlendMode, Brush, BrushShape, Color,
@@ -17,6 +17,11 @@ use fineliner_core::{
     Interpolation, Move, Pencil, Point, Rect, SampleSize, SampleSource, SelectionMask,
     SelectionMode, Shape, ShapeMode, ShapeStyle, Shapes, Text, TextAlign, TextStyle,
 };
+use fineliner_effects::blur::{BoxBlur, GaussianBlur, MotionBlur, RadialBlur, RadialKind};
+use fineliner_effects::distort::{EdgeAlgorithm, EdgeDetect, Emboss, Relief};
+use fineliner_effects::noise::{AddNoise, NoiseChannels, NoiseType, ReduceNoise};
+use fineliner_effects::sharpen::{Sharpen, UnsharpMask};
+use fineliner_effects::{Effect, EffectImage};
 use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -977,6 +982,205 @@ pub fn set_active_layer(handle: u32, index: usize) -> Result<(), JsError> {
     })
 }
 
+/// A JSON-serializable effect from JS (spec §17 `SerializedEffect`).
+///
+/// Like [`CommandSpec`], the TypeScript mirror is generated via ts-rs (ADR-014);
+/// the sub-choices (radial kind, edge algorithm, noise type/channels) cross the
+/// boundary as snake_case strings, matching the tool-option convention.
+#[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum EffectSpec {
+    /// Gaussian blur, σ = radius / 3.
+    GaussianBlur { radius: f32 },
+    /// Box blur over `width` × `height` (odd) pixels.
+    BoxBlur { width: u32, height: u32 },
+    /// Motion blur along a `distance`-long line at `angle` degrees.
+    MotionBlur { distance: f32, angle: f32 },
+    /// Radial blur about `(center_x, center_y)`; `kind` is `spin` or `zoom`.
+    RadialBlur {
+        amount: f32,
+        center_x: f32,
+        center_y: f32,
+        kind: String,
+    },
+    /// Fixed one-step sharpen (no parameters).
+    Sharpen,
+    /// Unsharp mask: amount (percent), radius (px), threshold (0–255).
+    UnsharpMask {
+        amount: f32,
+        radius: f32,
+        threshold: f32,
+    },
+    /// Emboss lit from `angle`/`elevation` with `relief` steepness.
+    Emboss {
+        angle: f32,
+        elevation: f32,
+        relief: f32,
+    },
+    /// Edge detect; `algorithm` is `sobel`, `prewitt` or `laplacian`.
+    EdgeDetect { algorithm: String, amount: f32 },
+    /// Colour-preserving relief along `angle` with strength `amount`.
+    Relief { angle: f32, amount: f32 },
+    /// Add noise; `noise_type` is `uniform`/`gaussian`, `channels` is
+    /// `rgb`/`monochromatic`.
+    AddNoise {
+        amount: u32,
+        noise_type: String,
+        channels: String,
+        seed: u64,
+    },
+    /// Reduce noise via a median filter of the given radius.
+    ReduceNoise { radius: u32 },
+}
+
+/// Parses a radial-blur kind string; defaults to Spin.
+fn parse_radial_kind(s: &str) -> RadialKind {
+    match s {
+        "zoom" => RadialKind::Zoom,
+        _ => RadialKind::Spin,
+    }
+}
+
+/// Parses an edge-detect algorithm string; defaults to Sobel.
+fn parse_edge_algorithm(s: &str) -> EdgeAlgorithm {
+    match s {
+        "prewitt" => EdgeAlgorithm::Prewitt,
+        "laplacian" => EdgeAlgorithm::Laplacian,
+        _ => EdgeAlgorithm::Sobel,
+    }
+}
+
+/// Parses a noise distribution string; defaults to Uniform.
+fn parse_noise_type(s: &str) -> NoiseType {
+    match s {
+        "gaussian" => NoiseType::Gaussian,
+        _ => NoiseType::Uniform,
+    }
+}
+
+/// Parses a noise channels string; defaults to Rgb.
+fn parse_noise_channels(s: &str) -> NoiseChannels {
+    match s {
+        "monochromatic" => NoiseChannels::Monochromatic,
+        _ => NoiseChannels::Rgb,
+    }
+}
+
+/// Runs the effect described by `spec` over `src`, returning the result buffer.
+fn run_effect(spec: &EffectSpec, src: &EffectImage) -> EffectImage {
+    match spec {
+        EffectSpec::GaussianBlur { radius } => GaussianBlur::new(*radius).apply(src),
+        EffectSpec::BoxBlur { width, height } => BoxBlur::new(*width, *height).apply(src),
+        EffectSpec::MotionBlur { distance, angle } => MotionBlur::new(*distance, *angle).apply(src),
+        EffectSpec::RadialBlur {
+            amount,
+            center_x,
+            center_y,
+            kind,
+        } => RadialBlur::new(*amount, *center_x, *center_y, parse_radial_kind(kind)).apply(src),
+        EffectSpec::Sharpen => Sharpen.apply(src),
+        EffectSpec::UnsharpMask {
+            amount,
+            radius,
+            threshold,
+        } => UnsharpMask::new(*amount, *radius, *threshold).apply(src),
+        EffectSpec::Emboss {
+            angle,
+            elevation,
+            relief,
+        } => Emboss::new(*angle, *elevation, *relief).apply(src),
+        EffectSpec::EdgeDetect { algorithm, amount } => {
+            EdgeDetect::new(parse_edge_algorithm(algorithm), *amount).apply(src)
+        }
+        EffectSpec::Relief { angle, amount } => Relief::new(*angle, *amount).apply(src),
+        EffectSpec::AddNoise {
+            amount,
+            noise_type,
+            channels,
+            seed,
+        } => AddNoise::new(
+            *amount,
+            parse_noise_type(noise_type),
+            parse_noise_channels(channels),
+            *seed,
+        )
+        .apply(src),
+        EffectSpec::ReduceNoise { radius } => ReduceNoise::new(*radius).apply(src),
+    }
+}
+
+/// Human-readable undo label for an effect.
+fn effect_label(spec: &EffectSpec) -> &'static str {
+    match spec {
+        EffectSpec::GaussianBlur { .. } => "Gaussian Blur",
+        EffectSpec::BoxBlur { .. } => "Box Blur",
+        EffectSpec::MotionBlur { .. } => "Motion Blur",
+        EffectSpec::RadialBlur { .. } => "Radial Blur",
+        EffectSpec::Sharpen => "Sharpen",
+        EffectSpec::UnsharpMask { .. } => "Unsharp Mask",
+        EffectSpec::Emboss { .. } => "Emboss",
+        EffectSpec::EdgeDetect { .. } => "Edge Detect",
+        EffectSpec::Relief { .. } => "Relief",
+        EffectSpec::AddNoise { .. } => "Add Noise",
+        EffectSpec::ReduceNoise { .. } => "Reduce Noise",
+    }
+}
+
+/// Reads the pixels of the layer at `index` into an [`EffectImage`].
+fn layer_effect_image(doc: &Document, index: usize) -> Result<(EffectImage, u32, u32), JsError> {
+    let layer = doc
+        .layers()
+        .get(index)
+        .ok_or_else(|| JsError::new("layer index out of bounds"))?;
+    let (w, h) = (layer.pixels.width(), layer.pixels.height());
+    let img = EffectImage::from_rgba8(w, h, layer.pixels.data().to_vec())
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok((img, w, h))
+}
+
+/// Applies `effect` to the pixels of the layer at `layer` as one undoable step
+/// (spec §11, §17.5). Effects target a specific layer, never the composite
+/// (§9 invariant). `effect` is a JSON [`EffectSpec`].
+#[wasm_bindgen]
+pub fn apply_effect(handle: u32, layer: usize, effect: &str) -> Result<(), JsError> {
+    let spec: EffectSpec =
+        serde_json::from_str(effect).map_err(|e| JsError::new(&e.to_string()))?;
+    with_bus(handle, |bus| {
+        let (src, w, h) = layer_effect_image(&bus.document, layer)?;
+        let out = run_effect(&spec, &src);
+        let after = ImageBuffer::from_raw(w, h, out.into_raw()).map_err(to_js)?;
+        let cmd =
+            SetPixels::new(layer, Rect::new(0, 0, w, h), after).with_label(effect_label(&spec));
+        bus.apply(Box::new(cmd)).map_err(to_js)
+    })
+}
+
+/// Renders a live preview of `effect` on the layer at `layer`: composites the
+/// document with that layer's pixels replaced, without mutating document state
+/// or the undo stack. Returns canvas-sized RGBA8 (spec §11 live preview).
+#[wasm_bindgen]
+pub fn preview_effect(
+    handle: u32,
+    layer: usize,
+    effect: &str,
+) -> Result<Clamped<Vec<u8>>, JsError> {
+    let spec: EffectSpec =
+        serde_json::from_str(effect).map_err(|e| JsError::new(&e.to_string()))?;
+    with_bus(handle, |bus| {
+        let mut layers = bus.document.layers().to_vec();
+        let target = layers
+            .get_mut(layer)
+            .ok_or_else(|| JsError::new("layer index out of bounds"))?;
+        let (w, h) = (target.pixels.width(), target.pixels.height());
+        let src = EffectImage::from_rgba8(w, h, target.pixels.data().to_vec())
+            .map_err(|e| JsError::new(&e.to_string()))?;
+        let out = run_effect(&spec, &src);
+        target.pixels = ImageBuffer::from_raw(w, h, out.into_raw()).map_err(to_js)?;
+        Ok(Clamped(compose(&layers).into_raw()))
+    })
+}
+
 /// Undoes the last command. Returns `true` if something was undone.
 #[wasm_bindgen]
 pub fn undo(handle: u32) -> Result<bool, JsError> {
@@ -1151,18 +1355,20 @@ mod command_spec_tests {
 
 #[cfg(test)]
 mod ts_bindings {
-    use super::CommandSpec;
+    use super::{CommandSpec, EffectSpec};
     use ts_rs::{Config, TS};
 
-    /// Regenerates the TypeScript mirror of `CommandSpec` (ADR-014). CI checks
-    /// that the committed file under `ui/src/lib/core/generated/` is in sync.
+    /// Regenerates the TypeScript mirrors of `CommandSpec` and `EffectSpec`
+    /// (ADR-014). CI checks that the committed files under
+    /// `ui/src/lib/core/generated/` are in sync.
     #[test]
     fn export_command_spec_bindings() {
-        // stroke_id (u64) exports as `number`: the UI generates small
-        // monotonic ids, far below Number.MAX_SAFE_INTEGER.
+        // u64 fields (stroke_id, noise seed) export as `number`: the UI
+        // generates small values, far below Number.MAX_SAFE_INTEGER.
         let cfg = Config::new()
             .with_large_int("number")
             .with_out_dir("../../ui/src/lib/core/generated");
-        CommandSpec::export_all(&cfg).expect("export TypeScript bindings");
+        CommandSpec::export_all(&cfg).expect("export CommandSpec bindings");
+        EffectSpec::export_all(&cfg).expect("export EffectSpec bindings");
     }
 }

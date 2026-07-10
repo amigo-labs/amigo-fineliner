@@ -801,6 +801,30 @@ ADR-016: Pushes to main auto-publish a version — 2026-07
             fit. Chosen autonomously (the clarifying question could not be
             delivered); revisit if a different scheme or publish target is
             wanted.
+
+ADR-017: WASM effects API for M11 — 2026-07
+  Decision: fineliner-wasm gains a fineliner-effects dependency and two exports
+            (spec §17.5): apply_effect(handle, layer, effect) runs the effect on
+            the target layer's pixels and commits it as one undoable SetPixels
+            over the whole canvas; preview_effect(handle, layer, effect)
+            composites the document with that layer's pixels replaced and
+            returns canvas-sized RGBA8, without touching document state or the
+            undo stack. `effect` is a JSON EffectSpec enum (tag "type",
+            snake_case) whose TypeScript mirror is generated via ts-rs alongside
+            CommandSpec (ADR-014); the sub-choices (radial kind, edge algorithm,
+            noise type/channels) cross as snake_case strings. Two deviations
+            from the spec §17.5 signatures: the target layer is passed by index
+            (matching every other CommandSpec, not layer_id), and preview_effect
+            omits max_dim (it returns the full-size composite for a crisp live
+            preview; the crate's scaled()/preview() downscaling is reserved for
+            the M16 performance pass).
+  Rationale: Routing apply through SetPixels reuses the existing lazy
+            before-capture undo path and keeps the "effects target a layer,
+            never the composite" invariant (§9). Compositing a cloned layer set
+            for preview needs no new core API (Document/Layer are Clone) and
+            shows the true result through blend modes and opacity. Indices and
+            snake_case strings follow the established tool-option/command
+            convention.
 ```
 
 ---

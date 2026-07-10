@@ -193,6 +193,7 @@ version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
  "fineliner-core",
+ "fineliner-effects",
  "js-sys",
  "serde",
  "serde-wasm-bindgen",
