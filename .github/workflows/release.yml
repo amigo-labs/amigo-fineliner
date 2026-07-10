@@ -80,6 +80,15 @@ jobs:
             --generate-notes \
             "fineliner-web-${{ steps.version.outputs.version }}.zip"
 
-  # Live PWA deploy (Cloudflare Pages, spec M15) plugs in here as a `needs:
-  # release` job once CLOUDFLARE_API_TOKEN + account id secrets exist. Left out
-  # until then so the release path works today with no extra configuration.
+      # Live PWA deploy to Cloudflare Workers (spec M15). Inert until opted in:
+      # set the repo variable DEPLOY_CLOUDFLARE=true and add the secrets
+      # CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID. Reuses the bundle just
+      # built above (wrangler.jsonc serves ./ui/dist), so the WASM is compiled
+      # here with the full toolchain instead of Cloudflare's build image.
+      - name: Deploy to Cloudflare Workers
+        if: ${{ vars.DEPLOY_CLOUDFLARE == 'true' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: deploy
