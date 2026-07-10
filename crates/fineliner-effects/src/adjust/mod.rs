@@ -21,7 +21,7 @@ pub use curves::{CurveChannel, Curves};
 pub use grayscale::{Grayscale, GrayscaleMethod};
 pub use hue_sat::HueSaturation;
 pub use invert::Invert;
-pub use levels::Levels;
+pub use levels::{Levels, LevelsChannel};
 pub use posterize::Posterize;
 pub use threshold::Threshold;
 
