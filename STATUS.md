@@ -317,9 +317,10 @@ description.
 
 ### Feature gaps (spec-mandated, deferred)
 
-- **Zoom / pan** (spec §16.1) — the canvas is scaled-to-fit only; the single
-  biggest UX gap. Needs a view transform in `MainCanvas`/`CanvasOverlay` and
-  `toCanvasPoint`. M-sized.
+- ~~**Zoom / pan** (spec §16.1)~~ — **DONE** (2026-07): view transform in the
+  store; wheel-to-cursor zoom, middle-drag pan, corner control (−/+/fit/1:1),
+  auto-fit on open + resize. Follow-ups: keyboard shortcuts (Ctrl+0/±) and a
+  space-drag hand, status-bar zoom %/cursor coords.
 - **New-document size dialog** — `New` is fixed 800×600; the `Modal` shell
   from round 2 makes this an S task now.
 - **Move-tool ghost preview** (spec §9.2) — needs a per-layer pixel read API
