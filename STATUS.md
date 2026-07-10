@@ -463,16 +463,17 @@ apply_effect/preview_effect path as effects (EffectSpec gained the variants).
   Color-Balance layout polish. All reachable via the WASM API regardless.
 - **Not yet done by a human:** visual browser run of the Adjustments menu.
 
-## Release automation + Cloudflare deploy (in progress)
+## Release automation + Cloudflare deploy (LIVE)
 
 - [x] **Auto-publish on push to main** (ADR-016, `.github/workflows/
   release.yml`): tag-based patch increment (highest `vX.Y.Z` + 1, seeded
   v0.1.0), builds the PWA bundle, cuts a GitHub Release with generated notes +
   `fineliner-web-<version>.zip`. Works with the built-in `GITHUB_TOKEN`.
-- [x] **Cloudflare Workers deploy repo-side** (`wrangler.jsonc` serves
-  `./ui/dist` as an SPA; `scripts/cf-build.sh` installs Rust/wasm-pack +
-  builds). Deploy runs through Cloudflare's Workers Builds Git integration
-  (user's choice, not GitHub Actions).
+- [x] **Cloudflare Workers deploy — GREEN** (2026-07): pushes deploy the PWA
+  live via Cloudflare's Workers Builds Git integration. The root `package.json`
+  `build` script runs `scripts/cf-build.sh` (installs Rust/wasm-pack, builds
+  `ui/dist`); `wrangler.jsonc` serves `ui/dist` as an SPA. First successful
+  deploy at commit c2ce643. No dashboard change was needed.
 - [x] **Default build command works (no dashboard change).** The Cloudflare
   build ran `bun run build` at the repo root and failed ("Script not found
   build") because package.json lived only in `ui/`. Added a root `package.json`
