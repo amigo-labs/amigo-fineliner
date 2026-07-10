@@ -35,6 +35,19 @@ export const ui = $state({
   modalOpen: false,
 });
 
+/** Canvas view transform (spec §6.4). `fit` re-centres/-scales to the viewport
+ * until the user zooms or pans. Zoom is display px per document px. */
+export const view = $state({
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+  fit: true,
+});
+
+/** Zoom limits (spec §6.4: fit to 6400 %-ish). */
+export const MIN_ZOOM = 0.02;
+export const MAX_ZOOM = 64;
+
 /** The selectable tools (spec §9.2 / §16.2). */
 export type ToolKind =
   | 'pencil'
