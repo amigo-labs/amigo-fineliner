@@ -1,8 +1,14 @@
 <script lang="ts">
-  // Effects menu (spec §11): a dropdown of effect groups; each item opens the
-  // shared effect dialog with a live preview.
-  import { EFFECT_GROUPS, type EffectDef } from './effects';
+  // A dropdown of grouped effects/adjustments; each item opens the shared effect
+  // dialog with a live preview (spec §11, §12). Reused for both menus via props.
+  import { EFFECT_GROUPS, type EffectDef, type EffectGroup } from './effects';
   import EffectDialog from '../dialogs/EffectDialog.svelte';
+
+  interface Props {
+    label?: string;
+    groups?: EffectGroup[];
+  }
+  const { label = 'Effects', groups = EFFECT_GROUPS }: Props = $props();
 
   let open = $state(false);
   let active = $state<EffectDef | null>(null);
@@ -19,7 +25,7 @@
     class:bg-neutral-700={open}
     onclick={() => (open = !open)}
   >
-    Effects
+    {label}
   </button>
 
   {#if open}
@@ -27,9 +33,9 @@
     <button class="fixed inset-0 z-40 cursor-default" aria-label="Close menu" onclick={() => (open = false)}
     ></button>
     <div
-      class="absolute left-0 top-8 z-50 w-52 rounded border border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] py-1 text-sm shadow-xl"
+      class="absolute left-0 top-8 z-50 max-h-[70vh] w-52 overflow-y-auto rounded border border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] py-1 text-sm shadow-xl"
     >
-      {#each EFFECT_GROUPS as group, i (group.group)}
+      {#each groups as group, i (group.group)}
         {#if i > 0}
           <div class="my-1 border-t border-[var(--fl-panel-border)]"></div>
         {/if}

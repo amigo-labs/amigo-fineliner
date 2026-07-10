@@ -4,10 +4,14 @@
 import type { EffectCommand } from '../../core/wasm';
 import { editor } from '../../stores/editor.svelte';
 
-/** A tunable parameter rendered by the effect dialog. */
+/** A tunable parameter rendered by the effect dialog.
+ *
+ * `key` names the command field; an optional `index` targets one element of an
+ * array-valued field (e.g. a color-balance tone range). */
 export type Field =
-  | { key: string; label: string; kind: 'range'; min: number; max: number; step: number }
-  | { key: string; label: string; kind: 'select'; options: Array<{ value: string; label: string }> };
+  | { key: string; index?: number; label: string; kind: 'range'; min: number; max: number; step: number }
+  | { key: string; index?: number; label: string; kind: 'select'; options: Array<{ value: string; label: string }> }
+  | { key: string; index?: number; label: string; kind: 'toggle' };
 
 /** A single effect: its menu label, dialog title, fields, and default command. */
 export interface EffectDef {

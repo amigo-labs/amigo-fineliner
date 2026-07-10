@@ -1,10 +1,11 @@
 <script lang="ts">
-  // Shared effect dialog (spec §11): renders the parameter controls for one
-  // effect, shows a debounced live preview on the canvas, and commits on Apply.
+  // Shared effect/adjustment dialog (spec §11, §12): renders parameter controls
+  // for one effect, shows a debounced live preview on the canvas, commits on
+  // Apply. Supports scalar, array-element (index), boolean and select fields.
   import { onMount, untrack } from 'svelte';
   import type { EffectCommand } from '../../core/wasm';
   import { applyEffect, previewEffect, clearEffectPreview } from '../../core/controller';
-  import type { EffectDef } from '../menus/effects';
+  import type { EffectDef, Field } from '../menus/effects';
   import Modal from './Modal.svelte';
 
   interface Props {
@@ -13,28 +14,40 @@
   }
   const { def, onClose }: Props = $props();
 
-  // `base` carries the effect type plus any non-UI fields (e.g. radial centre);
-  // `params` holds the values the fields edit and is spread over `base`. `def`
-  // is fixed for the dialog's lifetime (a new effect opens a fresh dialog), so
-  // these initial-value reads are intentional (untrack silences the lint).
+  type Value = number | string | boolean;
+
+  /** Unique control id: the field key, plus the array index when present. */
+  function fieldId(f: Field): string {
+    return f.index === undefined ? f.key : `${f.key}.${f.index}`;
+  }
+
+  /** Reads a field's initial value from the default command. */
+  function initial(f: Field): Value {
+    const rec = base as unknown as Record<string, Value | Value[]>;
+    const v = rec[f.key];
+    return f.index === undefined ? (v as Value) : (v as Value[])[f.index];
+  }
+
+  // `base` carries the effect type plus any non-UI fields (e.g. radial centre).
+  // `def` is fixed for the dialog's lifetime, so these initial reads are
+  // intentional (untrack silences the state-referenced-locally lint).
   const base = untrack(() => def.make());
-  const params = $state<Record<string, number | string>>(
-    untrack(() =>
-      Object.fromEntries(
-        def.fields.map(
-          (f): [string, number | string] => [
-            f.key,
-            (base as unknown as Record<string, number | string>)[f.key],
-          ],
-        ),
-      ),
-    ),
+  const params = $state<Record<string, Value>>(
+    untrack(() => Object.fromEntries(def.fields.map((f) => [fieldId(f), initial(f)]))),
   );
 
-  // A generic parameter bag over a discriminated union: the catalog guarantees
-  // keys/types match, so the double assertion is safe.
+  /** Rebuilds the command by writing each field's value into a clone of base. */
   function command(): EffectCommand {
-    return { ...base, ...params } as unknown as EffectCommand;
+    const cmd = structuredClone(base) as unknown as Record<string, Value | Value[]>;
+    for (const f of def.fields) {
+      const v = params[fieldId(f)];
+      if (f.index === undefined) {
+        cmd[f.key] = v;
+      } else {
+        (cmd[f.key] as Value[])[f.index] = v;
+      }
+    }
+    return cmd as unknown as EffectCommand;
   }
 
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -66,7 +79,7 @@
   {#if def.fields.length === 0}
     <p class="mb-3 text-neutral-400">Applies immediately — preview shown on the canvas.</p>
   {/if}
-  {#each def.fields as field (field.key)}
+  {#each def.fields as field (fieldId(field))}
     <label class="mb-2 flex items-center justify-between gap-3">
       <span class="text-neutral-400">{field.label}</span>
       {#if field.kind === 'range'}
@@ -76,15 +89,21 @@
             min={field.min}
             max={field.max}
             step={field.step}
-            value={params[field.key] as number}
-            oninput={(e) => (params[field.key] = e.currentTarget.valueAsNumber)}
+            value={params[fieldId(field)] as number}
+            oninput={(e) => (params[fieldId(field)] = e.currentTarget.valueAsNumber)}
           />
-          <span class="w-12 text-right tabular-nums">{params[field.key]}</span>
+          <span class="w-12 text-right tabular-nums">{params[fieldId(field)]}</span>
         </span>
+      {:else if field.kind === 'toggle'}
+        <input
+          type="checkbox"
+          checked={params[fieldId(field)] as boolean}
+          onchange={(e) => (params[fieldId(field)] = e.currentTarget.checked)}
+        />
       {:else}
         <select
-          value={params[field.key] as string}
-          onchange={(e) => (params[field.key] = e.currentTarget.value)}
+          value={params[fieldId(field)] as string}
+          onchange={(e) => (params[fieldId(field)] = e.currentTarget.value)}
           class="rounded border border-[var(--fl-panel-border)] bg-neutral-800 px-2 py-1"
         >
           {#each field.options as opt (opt.value)}

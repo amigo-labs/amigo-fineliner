@@ -243,6 +243,12 @@ export type EdgeAlgorithm = 'sobel' | 'prewitt' | 'laplacian';
 export type NoiseType = 'uniform' | 'gaussian';
 /** Whether noise is chromatic or shared across channels (spec §11.4). */
 export type NoiseChannels = 'rgb' | 'monochromatic';
+/** Curve target channel (spec §12.3). */
+export type CurveChannel = 'composite' | 'red' | 'green' | 'blue' | 'alpha';
+/** Levels target channel (spec §12.4). */
+export type LevelsChannel = 'composite' | 'red' | 'green' | 'blue';
+/** Grayscale weighting (spec §12.7). */
+export type GrayscaleMethod = 'luminosity' | 'average' | 'bt709' | 'channel_mixer';
 
 /** An effect applied destructively to a layer (spec §11). Mirrors the Rust
  * `EffectSpec`; the drift check in generated-check.ts guards the match. */
@@ -257,7 +263,30 @@ export type EffectCommand =
   | { type: 'edge_detect'; algorithm: EdgeAlgorithm; amount: number }
   | { type: 'relief'; angle: number; amount: number }
   | { type: 'add_noise'; amount: number; noise_type: NoiseType; channels: NoiseChannels; seed: number }
-  | { type: 'reduce_noise'; radius: number };
+  | { type: 'reduce_noise'; radius: number }
+  | { type: 'brightness_contrast'; brightness: number; contrast: number; enhanced: boolean }
+  | { type: 'hue_saturation'; hue: number; saturation: number; lightness: number; colorize: boolean }
+  | { type: 'curves'; channel: CurveChannel; points: Array<[number, number]> }
+  | {
+      type: 'levels';
+      channel: LevelsChannel;
+      in_black: number;
+      in_white: number;
+      gamma: number;
+      out_black: number;
+      out_white: number;
+    }
+  | {
+      type: 'color_balance';
+      shadows: [number, number, number];
+      midtones: [number, number, number];
+      highlights: [number, number, number];
+      preserve_luminosity: boolean;
+    }
+  | { type: 'invert' }
+  | { type: 'grayscale'; method: GrayscaleMethod; mixer: [number, number, number] }
+  | { type: 'posterize'; levels: number }
+  | { type: 'threshold'; threshold: number };
 
 /** Any command emitted to the core. */
 export type ToolCommand =
