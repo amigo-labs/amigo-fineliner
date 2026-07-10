@@ -181,6 +181,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fineliner-effects"
+version = "0.1.0"
+dependencies = [
+ "thiserror",
+]
+
+[[package]]
 name = "fineliner-wasm"
 version = "0.1.0"
 dependencies = [
