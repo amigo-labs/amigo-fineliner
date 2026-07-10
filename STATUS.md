@@ -431,6 +431,37 @@ colour-space/alpha convention (premultiplied, gamma/sRGB space).
 straight bilinear); radial-blur centre picking in the UI (defaults to canvas
 centre).
 
+## M12 — adjustments (COMPLETE)
+
+All 9 adjustments (spec §12), routed through the same layer-targeting
+apply_effect/preview_effect path as effects (EffectSpec gained the variants).
+
+- [x] **Core** (`fineliner-effects/src/adjust/`): Brightness/Contrast (Legacy +
+  Enhanced S-curve), Hue/Saturation/Lightness (+colorize, HSL), Curves (monotone
+  cubic spline → LUT, per channel incl. alpha), Levels (in/gamma/out → LUT),
+  Color Balance (per-tone-range shifts + optional preserve-luminosity), Invert,
+  Grayscale (Luminosity/Average/BT.709/Channel Mixer), Posterize, Threshold.
+  Per-pixel, gamma space, alpha preserved; `scaled` = identity. 25 tests incl.
+  the mandated invert∘invert=id, curves identity, grayscale luma.
+- [x] **WASM**: 9 EffectSpec variants + ts-rs mirror; channel/method as
+  snake_case strings.
+- [x] **UI**: Adjustments menu (grouped Tone/Color/Stylize) reusing the effect
+  dialog. The dialog's field system gained boolean toggles and array-element
+  (index) fields (Color Balance, enhanced/colorize/preserve flags). Curves are
+  exposed as presets (Increase Contrast / Lighten / Darken) in Phase 1.
+
+### Verification (M12)
+
+- `cargo test --workspace` green (68 effects tests); `clippy`/`fmt` clean;
+  `svelte-check` 0/0; `vite build` ok. Node WASM smoke test: invert∘invert =
+  identity, grayscale → R=G=B, curves identity no-op, levels preview non-mutating
+  canvas-sized, and color-balance/brightness/hue/posterize/threshold apply+undo
+  back to the exact original.
+- **Deferred (Phase 2 / follow-up):** a graphical Curves editor (presets only
+  now); a custom Grayscale channel-mixer UI (fixed methods now); larger
+  Color-Balance layout polish. All reachable via the WASM API regardless.
+- **Not yet done by a human:** visual browser run of the Adjustments menu.
+
 ## Release automation + Cloudflare deploy (in progress)
 
 - [x] **Auto-publish on push to main** (ADR-016, `.github/workflows/
