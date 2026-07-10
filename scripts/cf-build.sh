@@ -3,15 +3,11 @@
 # Cloudflare Workers Builds — build the Fineliner PWA into ui/dist.
 #
 # Cloudflare's build image ships Node but not the Rust/wasm-pack toolchain the
-# WASM core needs, so this script installs what's missing and then runs the
-# normal `pnpm build`. Configure the Cloudflare Workers project (Settings →
-# Build) as:
-#
-#   Root directory:  /            (repo root)
-#   Build command:   bash scripts/cf-build.sh
-#   Deploy command:  npx wrangler deploy      (the default; uses wrangler.jsonc)
-#
-# wrangler.jsonc serves ./ui/dist as a single-page app.
+# WASM core needs, so this script installs what's missing and then builds the
+# PWA into ui/dist. It is invoked by the root package.json "build" script, so
+# Cloudflare's default build command (`bun run build` / `npm run build`) just
+# works — no dashboard change needed. Deploy uses wrangler.jsonc (serves
+# ./ui/dist as a single-page app).
 set -euo pipefail
 
 # --- Rust toolchain -------------------------------------------------------
@@ -32,9 +28,14 @@ if ! command -v wasm-pack >/dev/null 2>&1; then
   cargo install wasm-pack --locked
 fi
 
-# --- pnpm via corepack (Node is preinstalled) -----------------------------
-corepack enable
-corepack prepare pnpm@10 --activate
+# --- pnpm (corepack if available, else a global install) ------------------
+if ! command -v pnpm >/dev/null 2>&1; then
+  if command -v corepack >/dev/null 2>&1; then
+    corepack enable && corepack prepare pnpm@10 --activate
+  else
+    npm install -g pnpm@10
+  fi
+fi
 
 # --- Build ----------------------------------------------------------------
 cd ui

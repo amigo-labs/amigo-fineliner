@@ -473,12 +473,14 @@ apply_effect/preview_effect path as effects (EffectSpec gained the variants).
   `./ui/dist` as an SPA; `scripts/cf-build.sh` installs Rust/wasm-pack +
   builds). Deploy runs through Cloudflare's Workers Builds Git integration
   (user's choice, not GitHub Actions).
-- [ ] **USER ACTION REQUIRED (Cloudflare dashboard):** the Workers project's
-  build command must be set to `bash scripts/cf-build.sh` (root dir `/`, deploy
-  command default `npx wrangler deploy`). Until then the Cloudflare build keeps
-  failing because its image has no Rust/wasm-pack. Also consider limiting
-  Git-integration deploys to the `main` branch (it currently builds PR branches
-  as "production").
+- [x] **Default build command works (no dashboard change).** The Cloudflare
+  build ran `bun run build` at the repo root and failed ("Script not found
+  build") because package.json lived only in `ui/`. Added a root `package.json`
+  whose `build` script runs `scripts/cf-build.sh`, so the default command now
+  resolves and installs Rust/wasm-pack before building `ui/dist`. If the build
+  still fails, the Cloudflare log shows the next step (likely toolchain/time).
+- [ ] **Optional:** limit Git-integration deploys to the `main` branch (it
+  currently builds PR branches as "production").
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer

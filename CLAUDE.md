@@ -786,12 +786,13 @@ ADR-016: Pushes to main auto-publish a version — 2026-07
             release notes are gh's --generate-notes. Minor/major bumps are done
             by hand-tagging (push a vX.Y.0 tag) — the next push increments from
             there. The live PWA deploy (spec M15) runs through Cloudflare's own
-            Workers Builds Git integration, not this workflow: its build command
-            is scripts/cf-build.sh (installs the Rust/wasm-pack toolchain the
-            Cloudflare build image lacks, then `pnpm build` → ./ui/dist) and it
-            deploys via wrangler.jsonc (static assets, SPA fallback). This
-            workflow only cuts the GitHub Release. npm publish of fineliner-wasm
-            remains a later add-on.
+            Workers Builds Git integration, not this workflow. A root
+            package.json "build" script runs scripts/cf-build.sh (installs the
+            Rust/wasm-pack toolchain the Cloudflare build image lacks, then
+            `pnpm build` → ./ui/dist), so Cloudflare's default `bun/npm run
+            build` works with no dashboard change; deploy uses wrangler.jsonc
+            (static assets, SPA fallback). This workflow only cuts the GitHub
+            Release. npm publish of fineliner-wasm remains a later add-on.
   Rationale: Tag-based bumping is self-contained (no commit-back loop, no
             write-to-protected-main), works today with only the built-in
             GITHUB_TOKEN, and keeps every main commit a shippable, downloadable

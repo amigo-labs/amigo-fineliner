@@ -3,10 +3,12 @@
   // The PWA is a pure client-side bundle: Workers just serves ./ui/dist with a
   // single-page-application fallback so deep links resolve to index.html.
   //
-  // Deploy runs through Cloudflare's Workers Builds Git integration: set the
-  // project's build command to `bash scripts/cf-build.sh` (it installs the
-  // Rust/wasm-pack toolchain the build image lacks and produces ./ui/dist) and
-  // leave the deploy command as the default `npx wrangler deploy`.
+  // Deploy runs through Cloudflare's Workers Builds Git integration. The root
+  // package.json "build" script runs scripts/cf-build.sh (installs the
+  // Rust/wasm-pack toolchain the build image lacks and produces ./ui/dist), so
+  // the default build command (`bun run build` / `npm run build`) works with no
+  // dashboard change; the default deploy command `npx wrangler deploy` uses
+  // this config.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "amigo-fineliner",
   "compatibility_date": "2026-07-10",
