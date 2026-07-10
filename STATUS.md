@@ -372,60 +372,64 @@ description.
 - Liberation Sans committed twice (ui asset + core test fixture, 404 KB each)
   — test-fixture isolation is intentional.
 
-## M11 — fineliner-effects crate (in progress: skeleton + blur landed)
+## M11 — fineliner-effects crate (effects core COMPLETE; WASM+UI remain)
 
-New crate `fineliner-effects`, independent of core (ADR-002). Stopped at the
-crate-skeleton milestone for review of the public API surface before the
-remaining three effect groups are built on top of it (CLAUDE.md §3.3).
+New crate `fineliner-effects`, independent of core (ADR-002). All four effect
+groups are implemented, tested, and committed (43 tests). **ADR-015** pins the
+colour-space/alpha convention (premultiplied, gamma/sRGB space).
 
-- [x] **Crate skeleton** (`image.rs`, `effect.rs`, `error.rs`, `lib.rs`):
-  `EffectImage` (owned RGBA8 buffer, own byte layout matching core's so a
-  layer's pixels cross in without reinterpretation) with premultiplied-alpha
-  f32 conversions and a bilinear `resized`; the `Effect` trait
-  (`apply(&EffectImage) -> EffectImage` + `scaled(factor)`, with a provided
-  `preview(src, max_dim)` that runs on a downscaled copy); `EffectError`.
-  std-only, no new deps (thiserror is already a workspace dep). Added to the
-  workspace members. **ADR-015** pins the colour-space/alpha convention
-  (premultiplied, gamma/sRGB space).
-- [x] **Blur group** (`blur/`): `GaussianBlur` (separable kernel, σ=radius/3),
-  `BoxBlur` (odd width/height, separable uniform), `MotionBlur`
-  (distance/angle line average, bilinear samples), `RadialBlur`
-  (Spin/Zoom about a centre). Shared `convolve_axis` + `sample_bilinear`
-  helpers. 21 tests incl. the mandated identities (Gaussian σ=0, Box 1×1)
-  plus solid-colour invariance and directional/spread checks.
+- [x] **Crate skeleton** (`image.rs`, `effect.rs`, `error.rs`, `kernel.rs`,
+  `lib.rs`): `EffectImage` (owned RGBA8, byte layout matching core's) with
+  premultiplied-alpha f32 conversions and a bilinear `resized`; the `Effect`
+  trait (`apply` + `scaled`, provided `preview`); `EffectError`; shared
+  `convolve_3x3`. std-only, no new deps.
+- [x] **Blur group** (`blur/`): Gaussian (σ=radius/3), Box (odd w/h), Motion
+  (distance/angle), Radial (Spin/Zoom). Shared `convolve_axis` +
+  `sample_bilinear`.
+- [x] **Sharpen group** (`sharpen/`): `Sharpen` (fixed 3×3) and `UnsharpMask`
+  (amount/radius/threshold, Gaussian low-pass, luminance-gated).
+- [x] **Distort group** (`distort/`): `Emboss` (angle/elevation/relief),
+  `EdgeDetect` (Sobel/Prewitt/Laplacian + amount), `Relief` (colour-preserving
+  directional emboss). Shared `luma_at` + normalised `gradient`.
+- [x] **Noise group** (`noise/`): `AddNoise` (Uniform/Gaussian, RGB/Mono,
+  seeded xorshift64* PRNG — no `rand` dep) and `ReduceNoise` (median filter).
 
-### Verification (M11 skeleton + blur)
+### Verification (M11 effects core)
 
-- `cargo test -p fineliner-effects` green (21 tests); `cargo test --workspace`
-  green (203 core + 21 effects + 2 wasm); `cargo clippy --workspace
-  --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
+- `cargo test -p fineliner-effects` green (43 tests, incl. mandated identities
+  Gaussian σ=0 / Box 1×1); `cargo test --workspace` green; `cargo clippy
+  --workspace --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
 
-### Next concrete tasks — remaining M11 + wiring
+### Next concrete tasks — M11 wiring
 
-Build on the reviewed skeleton (each: params struct, `apply`, `scaled`,
-identity/qualitative tests):
-
-- [ ] **Sharpen group** (`sharpen/`): `UnsharpMask` (amount/radius/threshold,
-  reuses `GaussianBlur` for the low-pass), `Sharpen` (fixed 3×3 convolution,
-  parameterless → `scaled` returns self). Test: sharpen counteracts a mild
-  blur (qualitative).
-- [ ] **Distort group** (`distort/`): `Emboss` (angle/elevation/relief),
-  `EdgeDetect` (Sobel/Prewitt/Laplacian, amount), `Relief`. A shared 3×3
-  convolution helper.
-- [ ] **Noise group** (`noise/`): `AddNoise` (amount, Uniform/Gaussian,
-  RGB/Monochromatic, seed → deterministic inline xorshift PRNG, no `rand`
-  dep), `ReduceNoise` (median filter, radius). Test: add-noise with a fixed
-  seed is reproducible; median of a spike removes it.
-- [ ] **WASM bindings** (spec §17.5): `apply_effect(handle, layer_id, effect)`
-  and `preview_effect(handle, layer_id, effect, max_dim)`; `SerializedEffect`
-  JSON. Needs a per-layer pixel read/write path (only composite + 32×32
-  thumbnails cross the boundary today). New API surface → ADR + stop.
+- [ ] **WASM bindings** (spec §17.5): add `fineliner-effects` as a wasm dep;
+  `apply_effect(handle, layer_id, effect)` (run effect on the target layer's
+  pixels → undoable `SetPixels`) and `preview_effect` (apply to a cloned layer,
+  composite, return RGBA for a live preview); `SerializedEffect`/`EffectSpec`
+  JSON. New API surface → ADR. Effects target a specific layer, never the
+  composite (§9 invariant).
 - [ ] **UI** (spec §11): Effects menu + a shared effect dialog (parameter
-  controls, 300 ms-debounced live preview via `preview_effect`, OK/Cancel).
+  controls, 300 ms-debounced live preview, OK/Cancel).
 
 Deferred with M16 (per backlog): Criterion benches (`benches/` does not exist
-yet); real premultiplied handling for the preview downscale (currently straight
-bilinear — approximate, fine for a thumbnail).
+yet); premultiplied preview downscale (currently straight bilinear).
+
+## Release automation + Cloudflare deploy (in progress)
+
+- [x] **Auto-publish on push to main** (ADR-016, `.github/workflows/
+  release.yml`): tag-based patch increment (highest `vX.Y.Z` + 1, seeded
+  v0.1.0), builds the PWA bundle, cuts a GitHub Release with generated notes +
+  `fineliner-web-<version>.zip`. Works with the built-in `GITHUB_TOKEN`.
+- [x] **Cloudflare Workers deploy repo-side** (`wrangler.jsonc` serves
+  `./ui/dist` as an SPA; `scripts/cf-build.sh` installs Rust/wasm-pack +
+  builds). Deploy runs through Cloudflare's Workers Builds Git integration
+  (user's choice, not GitHub Actions).
+- [ ] **USER ACTION REQUIRED (Cloudflare dashboard):** the Workers project's
+  build command must be set to `bash scripts/cf-build.sh` (root dir `/`, deploy
+  command default `npx wrangler deploy`). Until then the Cloudflare build keeps
+  failing because its image has no Rust/wasm-pack. Also consider limiting
+  Git-integration deploys to the `main` branch (it currently builds PR branches
+  as "production").
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
