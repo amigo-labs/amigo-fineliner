@@ -396,6 +396,11 @@ export async function renderText(x: number, y: number, text: string): Promise<vo
   syncInfo();
 }
 
+// Stem reused for export filenames: the opened file's name, or this default
+// for a blank/new document.
+const DEFAULT_EXPORT_STEM = 'fineliner-export';
+let exportStem = DEFAULT_EXPORT_STEM;
+
 /** Creates a blank document and makes it the active one. */
 export async function newDocument(width: number, height: number): Promise<void> {
   await initCore();
@@ -406,11 +411,10 @@ export async function newDocument(width: number, height: number): Promise<void> 
     core.closeDocument(editor.handle);
   }
   editor.handle = handle;
+  // A blank document must not inherit a previously opened file's name.
+  exportStem = DEFAULT_EXPORT_STEM;
   syncInfo();
 }
-
-// Stem of the last opened file, reused for export filenames.
-let exportStem = 'fineliner-export';
 
 /** Opens an encoded image file as a new single-layer document. */
 export async function openFile(file: File): Promise<void> {
@@ -423,7 +427,7 @@ export async function openFile(file: File): Promise<void> {
     core.closeDocument(editor.handle);
   }
   editor.handle = handle;
-  exportStem = file.name.replace(/\.[^.]+$/, '') || exportStem;
+  exportStem = file.name.replace(/\.[^.]+$/, '') || DEFAULT_EXPORT_STEM;
   syncInfo();
 }
 

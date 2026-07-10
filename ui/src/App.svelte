@@ -155,6 +155,8 @@
   function onBeforeUnload(e: BeforeUnloadEvent): void {
     if (editor.canUndo) {
       e.preventDefault();
+      // Legacy browsers gate the confirmation prompt on a set returnValue.
+      e.returnValue = '';
     }
   }
 </script>
