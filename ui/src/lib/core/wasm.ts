@@ -7,6 +7,8 @@ import initWasm, {
   close_document,
   composite,
   apply_command,
+  apply_effect,
+  preview_effect,
   pick_color,
   set_active_layer,
   get_layer_thumbnail,
@@ -233,6 +235,30 @@ export interface DrawTextCommand {
   align: TextAlign;
 }
 
+/** Radial-blur mode (spec §11.1). */
+export type RadialKind = 'spin' | 'zoom';
+/** Edge-detect kernel family (spec §11.3). */
+export type EdgeAlgorithm = 'sobel' | 'prewitt' | 'laplacian';
+/** Noise distribution (spec §11.4). */
+export type NoiseType = 'uniform' | 'gaussian';
+/** Whether noise is chromatic or shared across channels (spec §11.4). */
+export type NoiseChannels = 'rgb' | 'monochromatic';
+
+/** An effect applied destructively to a layer (spec §11). Mirrors the Rust
+ * `EffectSpec`; the drift check in generated-check.ts guards the match. */
+export type EffectCommand =
+  | { type: 'gaussian_blur'; radius: number }
+  | { type: 'box_blur'; width: number; height: number }
+  | { type: 'motion_blur'; distance: number; angle: number }
+  | { type: 'radial_blur'; amount: number; center_x: number; center_y: number; kind: RadialKind }
+  | { type: 'sharpen' }
+  | { type: 'unsharp_mask'; amount: number; radius: number; threshold: number }
+  | { type: 'emboss'; angle: number; elevation: number; relief: number }
+  | { type: 'edge_detect'; algorithm: EdgeAlgorithm; amount: number }
+  | { type: 'relief'; angle: number; amount: number }
+  | { type: 'add_noise'; amount: number; noise_type: NoiseType; channels: NoiseChannels; seed: number }
+  | { type: 'reduce_noise'; radius: number };
+
 /** Any command emitted to the core. */
 export type ToolCommand =
   | PencilStrokeCommand
@@ -263,6 +289,12 @@ export const core = {
   composite: (handle: number): Uint8ClampedArray => composite(handle),
   applyCommand: (handle: number, command: ToolCommand): void =>
     apply_command(handle, JSON.stringify(command)),
+  /** Applies an effect to a layer's pixels as one undoable step (spec §11). */
+  applyEffect: (handle: number, layer: number, effect: EffectCommand): void =>
+    apply_effect(handle, layer, JSON.stringify(effect)),
+  /** Composites the document with `effect` previewed on `layer`; no mutation. */
+  previewEffect: (handle: number, layer: number, effect: EffectCommand): Uint8ClampedArray =>
+    preview_effect(handle, layer, JSON.stringify(effect)),
   /** Samples a color; returns RGBA bytes, or an empty array if off-canvas. */
   pickColor: (handle: number, x: number, y: number, sample: SampleSource, size: number): Uint8Array =>
     pick_color(handle, x, y, sample, size),

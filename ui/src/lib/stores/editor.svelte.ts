@@ -24,6 +24,9 @@ export const editor = $state({
   hasSelection: false,
   /** Bumped after every mutation so the canvas and thumbnails refresh. */
   revision: 0,
+  /** A live effect preview composite that overrides the canvas while an effect
+   * dialog is open; `null` shows the real composite (spec §11 live preview). */
+  previewComposite: null as Uint8ClampedArray | null,
 });
 
 /** Transient UI chrome state (not document state). */

@@ -18,7 +18,8 @@
     if (!canvas || editor.handle === null) {
       return;
     }
-    const rgba = readComposite();
+    // An open effect dialog overrides the canvas with its live preview.
+    const rgba = editor.previewComposite ?? readComposite();
     if (rgba) {
       drawComposite(canvas, editor.width, editor.height, rgba);
     }
