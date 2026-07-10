@@ -776,6 +776,27 @@ ADR-015: Effects run in premultiplied-alpha gamma space — 2026-07
             path); a colour-math choice that affects every effect, so it is
             pinned once here per §12. std-only, no new runtime deps (thiserror
             is already a workspace dependency, ADR-005).
+
+ADR-016: Pushes to main auto-publish a version — 2026-07
+  Decision: .github/workflows/release.yml triggers on push to main and cuts a
+            GitHub Release. Versioning is tag-based auto patch-increment (the
+            highest existing vX.Y.Z tag + 1, seeded at v0.1.0), so CI never
+            commits back to main. The workflow builds the PWA bundle (same steps
+            as the CI ui job) and attaches it as fineliner-web-<version>.zip;
+            release notes are gh's --generate-notes. Minor/major bumps are done
+            by hand-tagging (push a vX.Y.0 tag) — the next push increments from
+            there. Cloudflare Pages deploy / npm publish are deferred M15 add-on
+            jobs (they need secrets) and dock onto this workflow as `needs:
+            release` steps when those secrets exist.
+  Rationale: Tag-based bumping is self-contained (no commit-back loop, no
+            write-to-protected-main), works today with only the built-in
+            GITHUB_TOKEN, and keeps every main commit a shippable, downloadable
+            build. The commit convention here ([crate] action) is not Angular
+            Conventional Commits, so semantic-release's feat/fix parsing does
+            not apply; auto-patch + manual minor/major tags is the pragmatic
+            fit. Chosen autonomously (the clarifying question could not be
+            delivered); revisit if a different scheme or publish target is
+            wanted.
 ```
 
 ---

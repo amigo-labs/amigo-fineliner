@@ -1,0 +1,85 @@
+name: Release
+
+# Every push to main publishes a new version: compute the next tag, build the
+# PWA bundle, and cut a GitHub Release with auto-generated notes (ADR-016).
+on:
+  push:
+    branches: [main]
+
+# Serialize releases so two quick pushes can't race on the same tag.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+# gh release create needs to write tags and releases.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Publish version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags so we can find the latest version tag.
+          fetch-depth: 0
+
+      - name: Compute next version
+        id: version
+        run: |
+          latest=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sort -V | tail -n1)
+          if [ -z "$latest" ]; then
+            next="0.1.0"
+          else
+            base=${latest#v}
+            major=${base%%.*}
+            rest=${base#*.}
+            minor=${rest%%.*}
+            patch=${rest##*.}
+            next="$major.$minor.$((patch + 1))"
+          fi
+          echo "version=$next" >> "$GITHUB_OUTPUT"
+          echo "tag=v$next" >> "$GITHUB_OUTPUT"
+          echo "Next version: v$next (previous: ${latest:-none})"
+
+      # Build the PWA bundle — mirrors the CI "ui" job.
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: ui/pnpm-lock.yaml
+      - name: Install dependencies
+        working-directory: ui
+        run: pnpm install --frozen-lockfile
+      - name: Build PWA bundle
+        working-directory: ui
+        run: pnpm build
+
+      - name: Package web bundle
+        run: |
+          cd ui/dist
+          zip -r "$GITHUB_WORKSPACE/fineliner-web-${{ steps.version.outputs.version }}.zip" .
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" \
+            --target "${{ github.sha }}" \
+            --title "${{ steps.version.outputs.tag }}" \
+            --generate-notes \
+            "fineliner-web-${{ steps.version.outputs.version }}.zip"
+
+  # Live PWA deploy (Cloudflare Pages, spec M15) plugs in here as a `needs:
+  # release` job once CLOUDFLARE_API_TOKEN + account id secrets exist. Left out
+  # until then so the release path works today with no extra configuration.
