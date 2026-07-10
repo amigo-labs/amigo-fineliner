@@ -275,7 +275,7 @@ approved (ab_glyph) with the UI supplying font bytes (Option B), per ADR-012.
   rich on-canvas caret/IME is a later polish item.
 - Dash stepping is O(pixels × on-segments); fine for Phase 1, an M16 concern.
 
-## Deep fixup — round 2 (2026-07, PLAN.md)
+## Deep fixup — round 2 (2026-07)
 
 Three parallel audits (UI, core/WASM, DX) with line-level verification, then a
 full fixup pass. All findings fixed and verified end-to-end (cargo gate, node
@@ -400,19 +400,36 @@ colour-space/alpha convention (premultiplied, gamma/sRGB space).
   Gaussian σ=0 / Box 1×1); `cargo test --workspace` green; `cargo clippy
   --workspace --all-targets -- -D warnings` clean; `cargo fmt --check` clean.
 
-### Next concrete tasks — M11 wiring
+### M11 wiring — DONE
 
-- [ ] **WASM bindings** (spec §17.5): add `fineliner-effects` as a wasm dep;
-  `apply_effect(handle, layer_id, effect)` (run effect on the target layer's
-  pixels → undoable `SetPixels`) and `preview_effect` (apply to a cloned layer,
-  composite, return RGBA for a live preview); `SerializedEffect`/`EffectSpec`
-  JSON. New API surface → ADR. Effects target a specific layer, never the
-  composite (§9 invariant).
-- [ ] **UI** (spec §11): Effects menu + a shared effect dialog (parameter
-  controls, 300 ms-debounced live preview, OK/Cancel).
+- [x] **WASM bindings** (ADR-017, spec §17.5): `fineliner-effects` added as a
+  wasm dep; `apply_effect(handle, layer, effect)` runs the effect on the target
+  layer's pixels as one undoable `SetPixels`; `preview_effect(handle, layer,
+  effect)` composites the doc with that layer replaced and returns canvas-sized
+  RGBA8 (no mutation). `EffectSpec` JSON (11 variants) with a ts-rs-generated
+  mirror + drift check. Layer by index; preview full-size (max_dim → M16).
+- [x] **UI** (spec §11): Effects menu (`EffectsMenu.svelte`, grouped
+  Blur/Sharpen/Distort/Noise) + shared `EffectDialog.svelte` (per-effect
+  parameter controls from `effects.ts`, 120 ms-debounced live preview via a
+  `previewComposite` override on the canvas, Apply/Cancel). Controller gains
+  `applyEffect`/`previewEffect`/`clearEffectPreview`.
 
-Deferred with M16 (per backlog): Criterion benches (`benches/` does not exist
-yet); premultiplied preview downscale (currently straight bilinear).
+### Verification (M11 wiring)
+
+- `cargo test -p fineliner-wasm` green (ts-rs mirror regenerated); `cargo clippy
+  --workspace --all-targets -- -D warnings` clean.
+- `pnpm` (wasm:dev build) + `svelte-check` = 0 errors / 0 warnings; `vite build`
+  succeeds.
+- Node smoke test through the real WASM boundary: preview returns a canvas-sized
+  buffer and does not mutate; Gaussian blur changes the composite and spreads
+  alpha; undo restores the pre-effect composite exactly; sharpen/emboss/
+  edge-detect/add-noise/reduce-noise all apply + undo cleanly.
+- **Not yet done by a human:** visual browser run of the Effects menu/dialog.
+
+**M11 is complete.** Deferred with M16 (per backlog): Criterion benches
+(`benches/` does not exist yet); premultiplied preview downscale (currently
+straight bilinear); radial-blur centre picking in the UI (defaults to canvas
+centre).
 
 ## Release automation + Cloudflare deploy (in progress)
 
