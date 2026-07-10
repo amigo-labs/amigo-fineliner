@@ -785,14 +785,13 @@ ADR-016: Pushes to main auto-publish a version — 2026-07
             as the CI ui job) and attaches it as fineliner-web-<version>.zip;
             release notes are gh's --generate-notes. Minor/major bumps are done
             by hand-tagging (push a vX.Y.0 tag) — the next push increments from
-            there. A Cloudflare Workers deploy step (spec M15; wrangler.jsonc
-            serves ./ui/dist as an SPA) is present but gated on the repo
-            variable DEPLOY_CLOUDFLARE=true plus CLOUDFLARE_API_TOKEN and
-            CLOUDFLARE_ACCOUNT_ID secrets, so it stays inert until opted in. The
-            bundle is built in CI (full Rust/wasm-pack toolchain), not in
-            Cloudflare's Git-integration build image, which cannot compile the
-            WASM — that Git integration should be disabled in favour of this
-            step. npm publish of fineliner-wasm remains a later add-on.
+            there. The live PWA deploy (spec M15) runs through Cloudflare's own
+            Workers Builds Git integration, not this workflow: its build command
+            is scripts/cf-build.sh (installs the Rust/wasm-pack toolchain the
+            Cloudflare build image lacks, then `pnpm build` → ./ui/dist) and it
+            deploys via wrangler.jsonc (static assets, SPA fallback). This
+            workflow only cuts the GitHub Release. npm publish of fineliner-wasm
+            remains a later add-on.
   Rationale: Tag-based bumping is self-contained (no commit-back loop, no
             write-to-protected-main), works today with only the built-in
             GITHUB_TOKEN, and keeps every main commit a shippable, downloadable

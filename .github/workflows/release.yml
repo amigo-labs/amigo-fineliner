@@ -80,15 +80,7 @@ jobs:
             --generate-notes \
             "fineliner-web-${{ steps.version.outputs.version }}.zip"
 
-      # Live PWA deploy to Cloudflare Workers (spec M15). Inert until opted in:
-      # set the repo variable DEPLOY_CLOUDFLARE=true and add the secrets
-      # CLOUDFLARE_API_TOKEN + CLOUDFLARE_ACCOUNT_ID. Reuses the bundle just
-      # built above (wrangler.jsonc serves ./ui/dist), so the WASM is compiled
-      # here with the full toolchain instead of Cloudflare's build image.
-      - name: Deploy to Cloudflare Workers
-        if: ${{ vars.DEPLOY_CLOUDFLARE == 'true' }}
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+  # The live PWA deploy runs through Cloudflare's own Workers Builds Git
+  # integration (not here): it runs scripts/cf-build.sh to compile the WASM +
+  # build ./ui/dist, then `wrangler deploy` using wrangler.jsonc. This workflow
+  # only cuts the versioned GitHub Release.
