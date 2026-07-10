@@ -12,19 +12,23 @@ use fineliner_core::command::{
     SetLayerOpacity, SetLayerVisible, SetSelection, TransformLayer,
 };
 use fineliner_core::{
-    apply_mode, compose, magic_wand, BlendMode, Brush, BrushShape, Color, DashPattern, Document,
-    Eraser, EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer, Interpolation, Move, Pencil,
-    Point, Rect, SampleSize, SampleSource, SelectionMask, SelectionMode, Shape, ShapeMode,
-    ShapeStyle, Shapes, Text, TextAlign, TextStyle,
+    apply_mode, compose, delete_selection, magic_wand, BlendMode, Brush, BrushShape, Color,
+    DashPattern, Document, Eraser, EraserMode, Eyedropper, Fill, FillOptions, ImageBuffer,
+    Interpolation, Move, Pencil, Point, Rect, SampleSize, SampleSource, SelectionMask,
+    SelectionMode, Shape, ShapeMode, ShapeStyle, Shapes, Text, TextAlign, TextStyle,
 };
 use serde::{Deserialize, Serialize};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::Clamped;
 
 thread_local! {
-    /// Open documents, indexed by handle. `None` slots are closed documents.
-    static DOCUMENTS: RefCell<Vec<Option<CommandBus>>> = const { RefCell::new(Vec::new()) };
+    /// Open documents by handle. Handles are never reused, so a stale handle
+    /// held by JS errors instead of silently aliasing a newer document.
+    static DOCUMENTS: RefCell<HashMap<u32, CommandBus>> = RefCell::new(HashMap::new());
+    /// Next handle to hand out; monotonically increasing.
+    static NEXT_HANDLE: Cell<u32> = const { Cell::new(0) };
     /// Registered font byte blobs, indexed by font id (see `register_font`).
     /// The Text tool re-parses these per commit (ADR-012), so JS uploads each
     /// face once and references it by id rather than passing bytes per command.
@@ -39,27 +43,30 @@ pub fn init() {
 
 /// Registers a TrueType/OpenType font and returns its id for use in `DrawText`
 /// commands (spec §9.2 Text; ADR-012, Option B — the caller supplies the font).
+///
+/// Re-registering byte-identical data returns the existing id, so repeated
+/// setup (e.g. per document open) does not accumulate copies.
 #[wasm_bindgen]
 pub fn register_font(data: &[u8]) -> u32 {
     FONTS.with(|fonts| {
         let mut fonts = fonts.borrow_mut();
+        if let Some(id) = fonts.iter().position(|f| f == data) {
+            return id as u32;
+        }
         fonts.push(data.to_vec());
         (fonts.len() - 1) as u32
     })
 }
 
-/// Inserts a bus into the arena and returns its handle.
+/// Inserts a bus into the arena and returns its (never reused) handle.
 fn insert(bus: CommandBus) -> u32 {
-    DOCUMENTS.with(|docs| {
-        let mut docs = docs.borrow_mut();
-        if let Some(slot) = docs.iter().position(Option::is_none) {
-            docs[slot] = Some(bus);
-            slot as u32
-        } else {
-            docs.push(Some(bus));
-            (docs.len() - 1) as u32
-        }
-    })
+    let handle = NEXT_HANDLE.with(|next| {
+        let h = next.get();
+        next.set(h + 1);
+        h
+    });
+    DOCUMENTS.with(|docs| docs.borrow_mut().insert(handle, bus));
+    handle
 }
 
 /// Runs `f` against the bus for `handle`, mapping a missing handle to a JS error.
@@ -69,7 +76,7 @@ fn with_bus<T>(
 ) -> Result<T, JsError> {
     DOCUMENTS.with(|docs| {
         let mut docs = docs.borrow_mut();
-        match docs.get_mut(handle as usize).and_then(Option::as_mut) {
+        match docs.get_mut(&handle) {
             Some(bus) => f(bus),
             None => Err(JsError::new("invalid document handle")),
         }
@@ -92,13 +99,11 @@ pub fn open_image(data: &[u8], _mime_type: &str) -> Result<u32, JsError> {
     Ok(insert(CommandBus::new(doc)))
 }
 
-/// Releases the document for `handle`.
+/// Releases the document for `handle`. The handle is never reused.
 #[wasm_bindgen]
 pub fn close_document(handle: u32) {
     DOCUMENTS.with(|docs| {
-        if let Some(slot) = docs.borrow_mut().get_mut(handle as usize) {
-            *slot = None;
-        }
+        docs.borrow_mut().remove(&handle);
     });
 }
 
@@ -335,7 +340,13 @@ fn sample_size(edge: u32) -> SampleSize {
 }
 
 /// A JSON-serializable command from JS (spec §17 `SerializedCommand`).
+///
+/// The TypeScript mirror of this enum is generated from it via ts-rs
+/// (ADR-014): `cargo test -p fineliner-wasm export_command_spec` writes
+/// `ui/src/lib/core/generated/CommandSpec.ts`, and the UI's command types are
+/// checked against it at `pnpm check` time.
 #[derive(Debug, Deserialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum CommandSpec {
     /// A pencil stroke over a polyline of `[x, y]` points.
@@ -383,6 +394,9 @@ enum CommandSpec {
     },
     /// Translate a layer's contents by `(dx, dy)` pixels (the Move tool).
     TranslateLayer { layer: usize, dx: i32, dy: i32 },
+    /// Erase the selected pixels of `layer` to transparent; the whole layer
+    /// when no selection is active (Edit ▸ Clear / Delete key).
+    DeleteSelection { layer: usize },
     /// Add a transparent layer above `active`.
     AddLayer { active: usize },
     /// Remove the layer at `index`.
@@ -464,6 +478,9 @@ enum CommandSpec {
     /// Flip or 180°-rotate the active layer (`op`: flip_h/flip_v/rotate_180).
     TransformLayer { layer: usize, op: String },
     /// Rotate the active layer 90° (counter-clockwise when `ccw`).
+    // Explicit rename: rename_all would yield "rotate_layer90" (serde inserts
+    // no separator before digits), but the UI-facing tag is "rotate_layer_90".
+    #[serde(rename = "rotate_layer_90")]
     RotateLayer90 { layer: usize, ccw: bool },
     /// Flip the whole canvas (all layers) horizontally or vertically.
     FlipCanvas { horizontal: bool },
@@ -627,6 +644,12 @@ pub fn apply_command(handle: u32, command: &str) -> Result<(), JsError> {
             match Move.translate(layer, dx, dy, &bus.document) {
                 Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
                 None => Ok(()),
+            }
+        }
+        CommandSpec::DeleteSelection { layer } => {
+            match delete_selection(layer, &bus.document) {
+                Some(cmd) => bus.apply(Box::new(cmd)).map_err(to_js),
+                None => Ok(()), // empty selection or invalid layer — no-op
             }
         }
         CommandSpec::AddLayer { active } => {
@@ -1103,4 +1126,43 @@ pub fn get_selection_mask(handle: u32) -> Result<Clamped<Vec<u8>>, JsError> {
 /// Converts a core error into a JS error.
 fn to_js(e: fineliner_core::DocumentError) -> JsError {
     JsError::new(&e.to_string())
+}
+
+#[cfg(test)]
+mod command_spec_tests {
+    use super::CommandSpec;
+
+    /// Regression: serde's snake_case puts no separator before digits, so the
+    /// variant carries an explicit rename to keep the documented wire tag.
+    #[test]
+    fn rotate_layer_90_wire_tag_deserializes() {
+        let spec: CommandSpec =
+            serde_json::from_str(r#"{"type":"rotate_layer_90","layer":0,"ccw":true}"#)
+                .expect("tag must parse");
+        assert!(matches!(
+            spec,
+            CommandSpec::RotateLayer90 {
+                layer: 0,
+                ccw: true
+            }
+        ));
+    }
+}
+
+#[cfg(test)]
+mod ts_bindings {
+    use super::CommandSpec;
+    use ts_rs::{Config, TS};
+
+    /// Regenerates the TypeScript mirror of `CommandSpec` (ADR-014). CI checks
+    /// that the committed file under `ui/src/lib/core/generated/` is in sync.
+    #[test]
+    fn export_command_spec_bindings() {
+        // stroke_id (u64) exports as `number`: the UI generates small
+        // monotonic ids, far below Number.MAX_SAFE_INTEGER.
+        let cfg = Config::new()
+            .with_large_int("number")
+            .with_out_dir("../../ui/src/lib/core/generated");
+        CommandSpec::export_all(&cfg).expect("export TypeScript bindings");
+    }
 }

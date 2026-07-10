@@ -71,6 +71,23 @@
     tool.textAlign === 'center' ? '-50%' : tool.textAlign === 'right' ? '-100%' : '0',
   );
 
+  // Per-tool cursor so the canvas signals what a click will do (spec §9.1).
+  const toolCursors: Record<string, string> = {
+    pencil: 'crosshair',
+    eraser: 'crosshair',
+    fill: 'cell',
+    eyedropper: 'copy',
+    move: 'move',
+    rect_select: 'crosshair',
+    ellipse_select: 'crosshair',
+    lasso: 'crosshair',
+    polygon_lasso: 'crosshair',
+    magic_wand: 'cell',
+    shapes: 'crosshair',
+    text: 'text',
+  };
+  const cursor = $derived(toolCursors[tool.kind] ?? 'default');
+
   onMount(() => attachTools(canvas, redraw, placeText));
 
   // Recompose whenever the document mutates.
@@ -90,7 +107,7 @@
     <canvas
       bind:this={canvas}
       class="block max-h-full max-w-full touch-none shadow-2xl shadow-black/60"
-      style="image-rendering: pixelated;"
+      style="image-rendering: pixelated; cursor: {cursor};"
     ></canvas>
     <CanvasOverlay />
     {#if textEntry}

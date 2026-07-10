@@ -1,47 +1,33 @@
 //! Layer-flattening commands: `MergeDown`, `MergeVisible`, `FlattenImage`
 //! (spec §5.2 / §7.3).
 //!
-//! Each bakes several layers into one. The result is a plain raster layer
-//! (Normal blend, opacity 1.0, visible) since its pixels already encode the
-//! composite of its inputs. For undo, the full prior layer stack and active
-//! index are snapshotted and restored verbatim — structural merges are
-//! infrequent, so the clone cost is acceptable (spec §7.1).
+//! Each bakes several layers into one. `MergeVisible`/`FlattenImage` produce a
+//! plain raster layer (Normal blend, opacity 1.0) since their pixels encode
+//! the full composite; `MergeDown` keeps the lower layer's blend mode and
+//! opacity, which relate it to the layers *beneath* the pair. For undo, the
+//! full prior layer stack and active index are snapshotted and restored
+//! verbatim — structural merges are infrequent, so the clone cost is
+//! acceptable (spec §7.1).
 
+use super::snapshot::{restore, snapshot, DocSnapshot};
 use super::Command;
-use crate::color::Color;
+use crate::color::{BlendMode, Color};
 use crate::document::{Document, Layer};
 use crate::error::DocumentError;
 use crate::render::{compose, compose_over};
 use std::any::Any;
 
-/// The prior layer stack, captured on first apply for exact reversal.
-struct Snapshot {
-    layers: Vec<Layer>,
-    active: usize,
-}
-
-/// Captures the current layer stack and active index.
-fn snapshot(doc: &Document) -> Snapshot {
-    Snapshot {
-        layers: doc.layers().to_vec(),
-        active: doc.active_layer_index(),
-    }
-}
-
-/// Restores a previously captured layer stack.
-fn restore(doc: &mut Document, snap: Snapshot) -> Result<(), DocumentError> {
-    doc.layers = snap.layers;
-    doc.set_active_layer(snap.active)
-}
-
 /// Merges the layer at `index` onto the layer directly below it.
 ///
-/// The two layers are composited as displayed (respecting opacity and blend
-/// mode) into a single layer that takes the lower layer's name and id. Errors
-/// if `index` is 0 (no layer below) or out of range.
+/// The upper layer is baked (respecting its opacity and blend mode) onto the
+/// lower layer's raw pixels; the merged layer keeps the lower layer's id,
+/// name, blend mode, opacity, visibility and lock, since those relate it to
+/// the layers beneath the pair. Where the upper layer is transparent the
+/// document composite is unchanged. Errors if `index` is 0 (no layer below)
+/// or out of range.
 pub struct MergeDown {
     index: usize,
-    before: Option<Snapshot>,
+    before: Option<DocSnapshot>,
 }
 
 impl MergeDown {
@@ -65,11 +51,18 @@ impl Command for MergeDown {
         }
         self.before = Some(snapshot(doc));
 
-        let lower = doc.layers()[self.index - 1].clone();
+        let mut merged = doc.layers()[self.index - 1].clone();
         let upper = doc.layers()[self.index].clone();
-        let merged_pixels = compose(&[lower.clone(), upper]);
-        let mut merged = Layer::from_pixels(lower.name.clone(), merged_pixels);
-        merged.id = lower.id; // the merged layer "is" the lower layer
+        // Bake the upper layer onto the lower one's raw pixels. The lower
+        // layer's own blend mode/opacity must not be baked in — they apply
+        // against the layers beneath and stay on the merged layer instead.
+        let base = Layer {
+            opacity: 1.0,
+            blend_mode: BlendMode::Normal,
+            visible: true,
+            ..merged.clone()
+        };
+        merged.pixels = compose(&[base, upper]);
 
         doc.layers.remove(self.index);
         doc.layers[self.index - 1] = merged;
@@ -96,7 +89,7 @@ impl Command for MergeDown {
 /// The merged layer is placed at the position of the lowest visible layer. A
 /// no-op if no layer is visible.
 pub struct MergeVisible {
-    before: Option<Snapshot>,
+    before: Option<DocSnapshot>,
 }
 
 impl MergeVisible {
@@ -160,7 +153,7 @@ impl Command for MergeVisible {
 /// Flattens every layer onto an opaque white background, producing a single
 /// fully opaque "Background" layer (spec §5.2).
 pub struct FlattenImage {
-    before: Option<Snapshot>,
+    before: Option<DocSnapshot>,
 }
 
 impl FlattenImage {
@@ -244,6 +237,38 @@ mod tests {
         cmd.revert(&mut doc).unwrap();
         assert_eq!(doc.layer_count(), 2);
         assert_eq!(compose(doc.layers()).into_raw(), before);
+    }
+
+    #[test]
+    fn merge_down_preserves_lower_layer_blend_mode_and_opacity() {
+        // [white bottom (Normal), red (Multiply), sparse top]: after merging the
+        // top down, the red layer's Multiply relationship to the bottom layer
+        // must survive — the merged layer inherits the lower layer's properties.
+        let mut doc = Document::new(2, 2).unwrap();
+        solid(&mut doc, 0, Color::rgba(200, 200, 200, 255));
+        doc.add_layer("Red").unwrap();
+        solid(&mut doc, 1, Color::rgba(255, 0, 0, 255));
+        doc.layers[1].blend_mode = BlendMode::Multiply;
+        doc.layers[1].opacity = 0.8;
+        doc.layers[1].locked = true;
+        doc.add_layer("Top").unwrap();
+        // Top paints a single pixel; everywhere else it is transparent.
+        doc.layers[2]
+            .pixels
+            .set_pixel(0, 0, Color::rgba(0, 255, 0, 255));
+
+        let before = compose(doc.layers()).into_raw();
+        let mut cmd = MergeDown::at(2);
+        cmd.apply(&mut doc).unwrap();
+
+        assert_eq!(doc.layer_count(), 2);
+        let merged = &doc.layers()[1];
+        assert_eq!(merged.blend_mode, BlendMode::Multiply);
+        assert_eq!(merged.opacity, 0.8);
+        assert!(merged.locked);
+        // Where the top layer was transparent the composite is unchanged.
+        let after = compose(doc.layers()).into_raw();
+        assert_eq!(after[4..], before[4..], "multiply region must be preserved");
     }
 
     #[test]

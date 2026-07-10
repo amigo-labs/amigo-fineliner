@@ -275,6 +275,103 @@ approved (ab_glyph) with the UI supplying font bytes (Option B), per ADR-012.
   rich on-canvas caret/IME is a later polish item.
 - Dash stepping is O(pixels × on-segments); fine for Phase 1, an M16 concern.
 
+## Deep fixup — round 2 (2026-07, PLAN.md)
+
+Three parallel audits (UI, core/WASM, DX) with line-level verification, then a
+full fixup pass. All findings fixed and verified end-to-end (cargo gate, node
+WASM smoke tests, Playwright browser run):
+
+- **Core bugs:** `MergeDown` now keeps the lower layer's blend mode/opacity
+  (was silently reset to Normal/1.0, visibly changing the composite);
+  `ResizeCanvas` drops the selection mask and restores it on undo (a stale
+  old-sized mask silently broke add/subtract gestures, the overlay, and
+  painting in grown regions); JPEG export flattens over white in linear light
+  (was black in gamma space, inconsistent with FlattenImage).
+- **Wire-tag bug:** serde's `rename_all` yields `rotate_layer90`, the UI sends
+  `rotate_layer_90` — Layer ▸ Rotate 90° was rejected as an unknown variant.
+  Found by the new ts-rs codegen; fixed with an explicit rename + test.
+- **WASM hardening:** document handles are never reused (stale handles error
+  instead of aliasing a newer document); `register_font` dedupes; selection
+  modifier radii are clamped (wasm32 overflow).
+- **New command:** `delete_selection` (core + WASM + Delete/Backspace) erases
+  the selected pixels of the active layer, coverage-scaled.
+- **UI gesture fixes:** in-flight gestures are owned by their pointerId
+  (multi-touch/second-button no longer corrupts them); Escape aborts a
+  gesture; selection/shapes/text respond to the primary button only; the New
+  button reports errors.
+- **UX:** shared `Modal` (Escape/Enter/autofocus, global-shortcut suppression),
+  per-tool cursors, beforeunload guard, `[`/`]` brush size, Ctrl+E export
+  menu, hex color entry, export filenames from the opened file's stem,
+  marching-ants RAF idles when the overlay is empty.
+- **DX:** GitHub Actions CI (full §10 gate + generated-bindings freshness);
+  `pnpm dev` builds WASM with `--dev`; ts-rs-generated `CommandSpec.ts` +
+  type-level drift check (ADR-014); insta snapshots for compose/codec; codec
+  round-trip proptests; core dedupe (tolerance test on `Color`,
+  `ImageBuffer::offset_copy`, one `DocSnapshot`).
+
+## Backlog — known open items (post fixup round 2)
+
+Everything below is known, deliberate, and waiting for its milestone or a
+decision. Consolidated from the round-2 audits so nothing lives only in a PR
+description.
+
+### Feature gaps (spec-mandated, deferred)
+
+- **Zoom / pan** (spec §16.1) — the canvas is scaled-to-fit only; the single
+  biggest UX gap. Needs a view transform in `MainCanvas`/`CanvasOverlay` and
+  `toCanvasPoint`. M-sized.
+- **New-document size dialog** — `New` is fixed 800×600; the `Modal` shell
+  from round 2 makes this an S task now.
+- **Move-tool ghost preview** (spec §9.2) — needs a per-layer pixel read API
+  across the WASM boundary (only `composite` and 32×32 thumbnails cross it
+  today). M-sized; the API is the prerequisite.
+- **Free Transform** (spec §10.1, task 9D; Ctrl+T) — interactive
+  translate/scale/rotate handles + the affine math. Arbitrary-angle canvas
+  rotation (spec §10.3) rides along with it.
+- **Anti-aliased selection edges** (spec §9.3) — rect/ellipse/lasso/wand masks
+  are hard-edged; the "anti-alias" option is unimplemented (M8 deferral).
+- **Arrow shape** (spec §9.2) — not in CLAUDE.md's M10 shape list; decide
+  whether it enters Phase 1 at all.
+- **Lossy WebP export** (ADR-007 open question) — pure-Rust `image` only
+  encodes lossless; accepting a new encoder dependency needs a decision.
+
+### UX polish (small, unscheduled)
+
+- Status-bar live cursor coordinates (and zoom % once zoom exists).
+- Brush-size ring cursor preview (the CSS cursor from round 2 is static).
+- Recent-colors row / swatch palette in the Colors panel (hex entry exists).
+- Rich text-entry caret/IME on canvas (today: styled textarea overlay).
+
+### DX / infra
+
+- **ESLint + Prettier for `ui/`** — new dev dependencies, needs explicit
+  approval per CLAUDE.md §9; svelte-check is the only linter today.
+- **UI tests (Vitest/Playwright)** — Phase 3 (§7.5). The round-2 Playwright
+  verification script is a session artifact, not checked in; it would be the
+  seed for `pnpm test:e2e`.
+- **Criterion benchmarks** (§7.6) — land with fineliner-effects (M11) and the
+  M16 performance pass; `benches/` does not exist yet.
+- `cw90`/`ccw90` wire strings are inconsistent with `rotate_180` — cosmetic;
+  normalizing is cross-boundary churn, batch it with the next WASM API change.
+- `canvas2d.ts` copies the composite an extra time per redraw
+  (`new Uint8ClampedArray(rgba)`); unverified whether it is avoidable —
+  check during M16.
+
+### Performance (M16 pass)
+
+- Marching-ants overlay: O(canvas) boundary rebuild per mutation and per-pixel
+  edge stroking (the RAF loop now idles, but rebuild cost remains).
+- Dirty-rect compositing, WebGPU path, WASM buffer reuse — all M16 as planned.
+
+### Deliberate non-goals (documented decisions)
+
+- `properties.rs` command boilerplate stays explicit (generic/macro rejected
+  for clarity).
+- `[workspace.lints] warnings = deny` skipped — CI enforces `-D warnings`;
+  a manifest deny hurts local iteration.
+- Liberation Sans committed twice (ui asset + core test fixture, 404 KB each)
+  — test-fixture isolation is intentional.
+
 ## Next concrete task — M11 (fineliner-effects crate)
 
 New crate `fineliner-effects` (independent of core, ADR-002): Blur (Gaussian,

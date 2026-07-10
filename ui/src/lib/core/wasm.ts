@@ -16,7 +16,6 @@ import initWasm, {
   export_jpeg,
   export_webp,
   get_document_info,
-  get_selection_bounds,
   get_selection_mask,
   register_font,
 } from '../wasm/pkg/fineliner_wasm.js';
@@ -109,6 +108,13 @@ export interface TranslateLayerCommand {
   layer: number;
   dx: number;
   dy: number;
+}
+
+/** Erase the selected pixels of a layer — the whole layer when no selection
+ * is active (Edit ▸ Clear / Delete key). */
+export interface DeleteSelectionCommand {
+  type: 'delete_selection';
+  layer: number;
 }
 
 /** Layer-structure and -property commands (spec §5.2 / §7.3). */
@@ -233,6 +239,7 @@ export type ToolCommand =
   | EraserStrokeCommand
   | FillBucketCommand
   | TranslateLayerCommand
+  | DeleteSelectionCommand
   | LayerCommand
   | SelectionCommand
   | TransformCommand
@@ -261,8 +268,6 @@ export const core = {
     pick_color(handle, x, y, sample, size),
   /** Selects the active layer (UI state, not undoable). */
   setActiveLayer: (handle: number, index: number): void => set_active_layer(handle, index),
-  /** Selection bounding box as [x, y, w, h], or an empty array if none. */
-  selectionBounds: (handle: number): number[] => Array.from(get_selection_bounds(handle)),
   /** Selection coverage bytes (canvas-sized, row-major), or empty if none. */
   selectionMask: (handle: number): Uint8ClampedArray => get_selection_mask(handle),
   /** Returns a 32×32 RGBA8 thumbnail of the layer with the given id. */

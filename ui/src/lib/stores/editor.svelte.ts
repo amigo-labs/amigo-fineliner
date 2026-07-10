@@ -26,6 +26,12 @@ export const editor = $state({
   revision: 0,
 });
 
+/** Transient UI chrome state (not document state). */
+export const ui = $state({
+  /** True while a modal dialog is open; global shortcuts are suppressed. */
+  modalOpen: false,
+});
+
 /** The selectable tools (spec §9.2 / §16.2). */
 export type ToolKind =
   | 'pencil'

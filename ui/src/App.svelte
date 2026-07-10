@@ -1,6 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { editor, tool, resetColors, swapColors, type ToolKind } from './lib/stores/editor.svelte';
+  import {
+    editor,
+    tool,
+    ui,
+    resetColors,
+    swapColors,
+    type ToolKind,
+  } from './lib/stores/editor.svelte';
   import {
     newDocument,
     openFile,
@@ -9,9 +16,11 @@
     redo,
     selectAll,
     deselect,
+    deleteSelection,
     invertSelection,
     type ExportFormat,
   } from './lib/core/controller';
+  import { gestureControl } from './lib/tools/pointer';
   import MainCanvas from './lib/components/canvas/MainCanvas.svelte';
   import ToolBar from './lib/components/toolbar/ToolBar.svelte';
   import ToolOptions from './lib/components/toolbar/ToolOptions.svelte';
@@ -89,8 +98,13 @@
   }
 
   function onKeydown(e: KeyboardEvent): void {
-    // Ignore shortcuts while typing in a field (text-entry overlay included).
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+    // Ignore shortcuts while typing in a field (text-entry overlay included)
+    // or while a modal dialog owns the keyboard.
+    if (
+      ui.modalOpen ||
+      e.target instanceof HTMLInputElement ||
+      e.target instanceof HTMLTextAreaElement
+    ) {
       return;
     }
     const ctrl = e.ctrlKey || e.metaKey;
@@ -110,6 +124,19 @@
     } else if (ctrl && e.shiftKey && key === 'i') {
       e.preventDefault();
       invertSelection();
+    } else if (ctrl && key === 'e') {
+      e.preventDefault();
+      exportOpen = !exportOpen;
+    } else if (key === 'escape') {
+      gestureControl.cancel();
+      exportOpen = false;
+    } else if (key === 'delete' || key === 'backspace') {
+      e.preventDefault();
+      deleteSelection();
+    } else if (key === '[') {
+      tool.size = Math.max(1, tool.size - (tool.size > 10 ? 5 : 1));
+    } else if (key === ']') {
+      tool.size = Math.min(500, tool.size + (tool.size >= 10 ? 5 : 1));
     } else if (!ctrl && key === 'x') {
       swapColors();
     } else if (!ctrl && key === 'd') {
@@ -122,9 +149,19 @@
       tool.kind = toolShortcuts[key];
     }
   }
+
+  // Warn before discarding edits on reload/close. `canUndo` is the dirty
+  // proxy: any applied command leaves history behind.
+  function onBeforeUnload(e: BeforeUnloadEvent): void {
+    if (editor.canUndo) {
+      e.preventDefault();
+      // Legacy browsers gate the confirmation prompt on a set returnValue.
+      e.returnValue = '';
+    }
+  }
 </script>
 
-<svelte:window onkeydown={onKeydown} />
+<svelte:window onkeydown={onKeydown} onbeforeunload={onBeforeUnload} />
 
 <div class="flex h-screen flex-col bg-[var(--fl-app-bg)] text-neutral-200">
   <!-- Top action bar -->
@@ -132,7 +169,10 @@
     class="flex items-center gap-2 border-b border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] px-3 py-1.5 text-sm"
   >
     <span class="mr-3 font-semibold text-[var(--fl-accent)]">Fineliner</span>
-    <button class="rounded px-2 py-1 hover:bg-neutral-700" onclick={() => newDocument(800, 600)}>
+    <button
+      class="rounded px-2 py-1 hover:bg-neutral-700"
+      onclick={() => newDocument(800, 600).catch((e) => (loadError = String(e)))}
+    >
       New
     </button>
     <button class="rounded px-2 py-1 hover:bg-neutral-700" onclick={() => fileInput.click()}>

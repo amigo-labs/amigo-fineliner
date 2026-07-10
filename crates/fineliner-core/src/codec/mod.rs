@@ -7,8 +7,10 @@
 //! WebP export is lossless in Phase 1 (see ADR-007): the pure-Rust `image`
 //! crate cannot encode lossy WebP and CLAUDE.md forbids system dependencies.
 
+use crate::color::Color;
 use crate::document::ImageBuffer;
 use crate::error::DocumentError;
+use crate::render::over_background;
 use image::codecs::bmp::BmpEncoder;
 use image::codecs::jpeg::JpegEncoder;
 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
@@ -74,9 +76,14 @@ pub fn encode_png<W: Write>(
 
 /// Encodes the buffer as JPEG to `writer`. `quality` is 1–100.
 ///
-/// JPEG has no alpha channel; the alpha is composited over opaque black.
+/// JPEG has no alpha channel; the buffer is composited over opaque white in
+/// linear light, matching Flatten Image (spec §5.2).
 pub fn encode_jpeg<W: Write>(buf: &ImageBuffer, writer: W, quality: u8) -> Result<(), CodecError> {
-    let rgb = rgba_to_rgb_on_black(buf);
+    let flat = over_background(buf.clone(), Color::WHITE);
+    let mut rgb = Vec::with_capacity(flat.data().len() / 4 * 3);
+    for px in flat.data().chunks_exact(4) {
+        rgb.extend_from_slice(&px[..3]);
+    }
     let mut encoder = JpegEncoder::new_with_quality(writer, quality.clamp(1, 100));
     encoder
         .encode(&rgb, buf.width(), buf.height(), ExtendedColorType::Rgb8)
@@ -107,19 +114,6 @@ pub fn encode_webp<W: Write>(buf: &ImageBuffer, writer: W) -> Result<(), CodecEr
             ExtendedColorType::Rgba8,
         )
         .map_err(CodecError::Encode)
-}
-
-/// Composites straight-alpha RGBA over opaque black and returns packed RGB8.
-fn rgba_to_rgb_on_black(buf: &ImageBuffer) -> Vec<u8> {
-    let data = buf.data();
-    let mut rgb = Vec::with_capacity(data.len() / 4 * 3);
-    for px in data.chunks_exact(4) {
-        let a = px[3] as u16;
-        rgb.push((px[0] as u16 * a / 255) as u8);
-        rgb.push((px[1] as u16 * a / 255) as u8);
-        rgb.push((px[2] as u16 * a / 255) as u8);
-    }
-    rgb
 }
 
 /// Convenience: encode to PNG bytes.
@@ -221,6 +215,20 @@ mod tests {
         }
         let mae = total as f64 / (16.0 * 16.0 * 3.0);
         assert!(mae < 8.0, "JPEG mean abs error too high: {mae}");
+    }
+
+    #[test]
+    fn jpeg_flattens_transparency_over_white() {
+        // JPEG has no alpha; transparent regions must flatten to (near-)white,
+        // matching FlattenImage/compose_over — not to black.
+        let src = ImageBuffer::new_transparent(8, 8);
+        let bytes = to_jpeg_bytes(&src, 90).unwrap();
+        let back = decode(&bytes).unwrap();
+        let p = back.get_pixel(0, 0).unwrap();
+        assert!(
+            p.r > 240 && p.g > 240 && p.b > 240,
+            "transparent pixel flattened to {p:?}, expected near-white"
+        );
     }
 
     #[test]

@@ -7,7 +7,6 @@
 //! the "Select by Color" command. Hard edge; anti-aliasing is deferred.
 
 use super::SelectionMask;
-use crate::color::Color;
 use crate::document::{Document, ImageBuffer};
 use crate::geometry::Point;
 use crate::render::compose;
@@ -64,7 +63,7 @@ pub fn magic_wand(
                     return;
                 }
                 if let Some(c) = buffer.get_pixel(nx, ny) {
-                    if within_tolerance(c, seed_color, tolerance) {
+                    if c.within_tolerance(seed_color, tolerance) {
                         visited[i] = true;
                         stack.push((nx, ny));
                     }
@@ -87,7 +86,7 @@ pub fn magic_wand(
         for y in 0..h {
             for x in 0..w {
                 if let Some(c) = buffer.get_pixel(x, y) {
-                    if within_tolerance(c, seed_color, tolerance) {
+                    if c.within_tolerance(seed_color, tolerance) {
                         mask.set(x, y, 255);
                     }
                 }
@@ -97,20 +96,10 @@ pub fn magic_wand(
     Some(mask)
 }
 
-/// Whether `a` is within `tol` Euclidean RGBA8 distance of `b` (matching Fill).
-fn within_tolerance(a: Color, b: Color, tol: u8) -> bool {
-    let dr = a.r as i32 - b.r as i32;
-    let dg = a.g as i32 - b.g as i32;
-    let db = a.b as i32 - b.b as i32;
-    let da = a.a as i32 - b.a as i32;
-    let dist2 = dr * dr + dg * dg + db * db + da * da;
-    let tol = tol as i32;
-    dist2 <= tol * tol
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::color::Color;
 
     fn doc_3px_wall() -> Document {
         // White, black wall, white.

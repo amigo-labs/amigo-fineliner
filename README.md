@@ -23,10 +23,14 @@ pnpm install
 pnpm dev        # builds the WASM core automatically, then starts Vite
 ```
 
-Every `dev`/`build`/`check` script first runs `pnpm run wasm`, which compiles
-`crates/fineliner-wasm` with wasm-pack into the gitignored `ui/src/lib/wasm/pkg/`.
-A fresh clone needs nothing beyond the prerequisites above — the first script run
-generates the package.
+Every `dev`/`build`/`check` script first compiles `crates/fineliner-wasm` with
+wasm-pack into the gitignored `ui/src/lib/wasm/pkg/` (`pnpm dev` uses the fast
+`--dev` profile; `build`/`check` use `--release`). A fresh clone needs nothing
+beyond the prerequisites above — the first script run generates the package.
+
+> **Note:** Vite does not watch the Rust sources. After editing Rust code while
+> `pnpm dev` is running, run `pnpm run wasm:dev` in another terminal (or restart
+> `pnpm dev`) to pick up the new WASM.
 
 ## Verify
 

@@ -1,6 +1,24 @@
 <script lang="ts">
-  // Foreground/background swatches with swap (spec §16.6, §4.2).
+  // Foreground/background swatches with swap and hex entry (spec §16.6, §4.2).
   import { tool, swapColors } from '../../stores/editor.svelte';
+
+  // Hex text entry mirrors the foreground; only a full #RRGGBB commits.
+  let hexText = $state(tool.foreground);
+  let hexFocused = false;
+
+  $effect(() => {
+    // Follow external changes (picker, eyedropper, swap) unless mid-edit.
+    if (!hexFocused) {
+      hexText = tool.foreground;
+    }
+  });
+
+  function onHexInput(): void {
+    const m = /^#?([0-9a-f]{6})$/i.exec(hexText.trim());
+    if (m) {
+      tool.foreground = `#${m[1].toLowerCase()}`;
+    }
+  }
 </script>
 
 <div class="border-b border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] p-3">
@@ -33,4 +51,21 @@
       />
     </label>
   </div>
+  <label class="mt-2 flex items-center gap-2 text-xs text-neutral-400">
+    Hex
+    <input
+      type="text"
+      bind:value={hexText}
+      oninput={onHexInput}
+      onfocus={() => (hexFocused = true)}
+      onblur={() => {
+        hexFocused = false;
+        hexText = tool.foreground;
+      }}
+      spellcheck="false"
+      maxlength="7"
+      class="w-20 rounded border border-[var(--fl-panel-border)] bg-[var(--fl-app-bg)] px-2 py-1 font-mono text-neutral-200"
+      aria-label="Foreground color hex value"
+    />
+  </label>
 </div>

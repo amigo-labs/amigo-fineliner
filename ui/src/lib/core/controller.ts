@@ -396,6 +396,11 @@ export async function renderText(x: number, y: number, text: string): Promise<vo
   syncInfo();
 }
 
+// Stem reused for export filenames: the opened file's name, or this default
+// for a blank/new document.
+const DEFAULT_EXPORT_STEM = 'fineliner-export';
+let exportStem = DEFAULT_EXPORT_STEM;
+
 /** Creates a blank document and makes it the active one. */
 export async function newDocument(width: number, height: number): Promise<void> {
   await initCore();
@@ -406,6 +411,8 @@ export async function newDocument(width: number, height: number): Promise<void> 
     core.closeDocument(editor.handle);
   }
   editor.handle = handle;
+  // A blank document must not inherit a previously opened file's name.
+  exportStem = DEFAULT_EXPORT_STEM;
   syncInfo();
 }
 
@@ -420,6 +427,7 @@ export async function openFile(file: File): Promise<void> {
     core.closeDocument(editor.handle);
   }
   editor.handle = handle;
+  exportStem = file.name.replace(/\.[^.]+$/, '') || DEFAULT_EXPORT_STEM;
   syncInfo();
 }
 
@@ -489,6 +497,17 @@ export function fillAt(x: number, y: number, useBackground = false): void {
     y,
   };
   core.applyCommand(editor.handle, cmd);
+  syncInfo();
+}
+
+/** Erases the selected pixels of the active layer (Delete / Edit ▸ Clear).
+ *
+ * With no active selection the whole layer is cleared. */
+export function deleteSelection(): void {
+  if (editor.handle === null) {
+    return;
+  }
+  core.applyCommand(editor.handle, { type: 'delete_selection', layer: editor.activeLayer });
   syncInfo();
 }
 
@@ -579,7 +598,7 @@ export function exportImage(format: ExportFormat = 'png', quality = 90): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `fineliner-export.${format === 'jpeg' ? 'jpg' : format}`;
+  a.download = `${exportStem}.${format === 'jpeg' ? 'jpg' : format}`;
   document.body.appendChild(a);
   a.click();
   // Defer cleanup so the browser has started the download (avoids a WebKit
