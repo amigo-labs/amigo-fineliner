@@ -1,0 +1,39 @@
+# Line endings — see CLAUDE.md 6.4.
+#
+# Every text file is stored LF in the repository and checked out LF. Declaring
+# it here makes it a property of the repo rather than of whoever cloned it:
+# core.autocrlf is a per-installation setting (Git for Windows ships it as
+# `true`, plain Git as `false`), so without this file the working tree's line
+# endings depend on the machine. On a clone with core.autocrlf=false the result
+# is a CRLF working tree against LF blobs, and `git status` reports every text
+# file as modified — the same diff regenerated on every platform switch.
+#
+# eol=lf rather than eol=native: the toolchain is LF-native end to end. CI runs
+# on Linux runners, scripts/cf-build.sh runs in Cloudflare's Linux build image,
+# and rustfmt / svelte-check / Vite all emit LF. A CRLF working tree buys
+# nothing here and costs a diff whenever the platform changes.
+
+*               text=auto eol=lf
+
+# Binary — never end-of-line converted, never diffed as text.
+*.ttf           binary
+*.otf           binary
+*.woff          binary
+*.woff2         binary
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.webp          binary
+*.bmp           binary
+*.gif           binary
+*.tif           binary
+*.tiff          binary
+*.ico           binary
+*.wasm          binary
+*.zip           binary
+*.zst           binary
+*.fln           binary
+
+# Shell scripts run in a Linux build image; a CRLF shebang breaks them, so LF
+# is not a preference here but a correctness requirement.
+*.sh            text eol=lf
