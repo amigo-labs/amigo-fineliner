@@ -34,13 +34,13 @@ What the hold means:
   surface is not — including every backlog entry below.
 - **9D Free Transform is Phase 2.** It was the last optional Phase 1 task; it is
   now explicitly out of Phase 1 (see M9 and the backlog).
-- **ADR-007 is closed.** WebP export stays lossless, final — ADR-018 in
-  CLAUDE.md §13. The spec has not caught up: §13.2 still mandates lossy WebP at
-  quality 1–100, so amending it is one of the open items below.
-- **Two human action items are open:** restricting Cloudflare production deploys
+- **ADR-007 is closed, spec included.** WebP export stays lossless, final —
+  ADR-018 in CLAUDE.md §13, and since 2026-08-20 the spec agrees: §13.2 no
+  longer asks for lossy WebP, §17's `export_webp` no longer takes a quality
+  argument, and DL-008 records it on the spec side.
+- **One human action item is open:** restricting Cloudflare production deploys
   to `main` (a dashboard setting, not a `wrangler.jsonc` key — see "Release
-  automation + Cloudflare deploy" below), and amending spec §13.2 to match
-  ADR-018 (see "Open questions" below).
+  automation + Cloudflare deploy" below).
 - **Two decisions are still open:** whether the Arrow shape (spec §9.2) enters
   Phase 2 at all, and whether `ui/` gets ESLint + Prettier (new dev
   dependencies, so CLAUDE.md §9 approval). The hold parks them, it does not
@@ -559,8 +559,8 @@ open. This marker only keeps the milestone record pointing there.
 
 ## Open questions
 
-Two decisions and one spec amendment are open; the one standing question about
-WebP is closed.
+Two decisions are open; the WebP question and its spec amendment are both
+closed.
 
 - **Arrow shape** (spec §9.2) — not in CLAUDE.md's M10 shape list, and Phase 1
   closed without it, so the question is now a Phase 2 scoping one: does the
@@ -570,14 +570,12 @@ WebP is closed.
   approval per CLAUDE.md §9 before anyone adds them; svelte-check is still the
   only linter. Tooling rather than feature surface, so the hold does not decide
   it. Context in the backlog under "DX / infra".
-- **Human action item — amend spec §13.2.** ADR-018 makes lossless-only final,
-  but `docs/specs/fineliner.md` §13.2 still mandates lossy WebP at quality
-  1–100, so the source of truth and the ADR log now disagree. CLAUDE.md §2.1
-  requires the spec to be updated when a decision diverges from it, and §11's
-  Definition of Done asks for "Spec references updated if design shifted";
-  ADR-018 flags the divergence in the log the way ADR-010 flags §10.6. Needs a
-  human to edit the spec — dropping the lossy-quality requirement there is what
-  actually closes ADR-007.
+- ~~**Human action item — amend spec §13.2**~~ — **DONE 2026-08-20:** the spec
+  now matches ADR-018. `docs/specs/fineliner.md` §13.2 states lossless-only with
+  the reasoning, §17's `export_webp` signature dropped its `quality` argument to
+  match the implementation, and DL-008 is the spec-side record. This satisfies
+  CLAUDE.md §2.1 (spec follows a diverging decision) and §11's "Spec references
+  updated if design shifted"; no human edit is outstanding.
 - ~~**WebP lossy export** (ADR-007)~~ — **CLOSED 2026-08-20:** WebP export
   stays lossless, decision final (ADR-018). CLAUDE.md's no-system-dependency
   rule is the stronger constraint and the spec §13.2 lossy quality 1–100

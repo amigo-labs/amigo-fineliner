@@ -856,9 +856,10 @@ ADR-018: WebP export stays lossless, ADR-007 final — 2026-08
             no-system-dependency rule (§4 M4: "image crate only. No
             imagemagick, no system deps."). The question is settled, not
             parked; only the appearance of a viable pure-Rust lossy WebP
-            encoder reopens it, and then as a new ADR. This diverges from spec
-            §13.2 (lossy WebP, quality 1–100), which must be amended to match —
-            STATUS.md "Open questions" tracks it as a human action item.
+            encoder reopens it, and then as a new ADR. The spec has since been
+            amended to match (2026-08-20): docs/specs/fineliner.md §13.2 drops
+            the lossy-quality requirement, §17's export_webp signature drops its
+            quality argument, and DL-008 records the decision on the spec side.
   Rationale: The two constraints are genuinely in conflict and one has to give.
             No-system-deps is the stronger one: it is what keeps a single
             `cargo build` / `wasm-pack build` working on every platform and on
