@@ -826,6 +826,29 @@ ADR-017: WASM effects API for M11 — 2026-07
             shows the true result through blend modes and opacity. Indices and
             snake_case strings follow the established tool-option/command
             convention.
+
+ADR-018: WebP export stays lossless, ADR-007 final — 2026-08
+  Decision: ADR-007 is closed, not deferred: encode_webp produces lossless
+            WebP and Fineliner ships no lossy WebP export. The spec §13.2
+            requirement (lossy WebP, quality 1–100) yields to the
+            no-system-dependency rule (§4 M4: "image crate only. No
+            imagemagick, no system deps."). The question is settled, not
+            parked; only the appearance of a viable pure-Rust lossy WebP
+            encoder reopens it, and then as a new ADR. This diverges from spec
+            §13.2 (lossy WebP, quality 1–100), which must be amended to match —
+            STATUS.md "Open questions" tracks it as a human action item.
+  Rationale: The two constraints are genuinely in conflict and one has to give.
+            No-system-deps is the stronger one: it is what keeps a single
+            `cargo build` / `wasm-pack build` working on every platform and on
+            wasm32 at all (libwebp is a C library), and it is reinforced by
+            §5.1's no-platform-dependencies rule and §9's ban on unapproved
+            dependencies — whereas lossy WebP is one format option in an
+            export matrix that already carries a lossless codec (PNG) and a
+            lossy one (JPEG). ADR-007 left this "revisit if a pure-Rust lossy
+            encoder becomes available", which kept it standing as an open
+            question in STATUS.md for three months with no candidate encoder;
+            recording it as final clears that decision debt without foreclosing
+            the one condition that would change the answer.
 ```
 
 ---
