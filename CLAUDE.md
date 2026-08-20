@@ -850,26 +850,6 @@ ADR-017: WASM effects API for M11 — 2026-07
             snake_case strings follow the established tool-option/command
             convention.
 
-ADR-019: The Arrow shape is Phase 2, not a non-goal — 2026-08
-  Decision: The Arrow stays in spec §9.2's shape list and lands in Phase 2 with
-            the rest of the shape work. M10's shape list above (Line, Rectangle,
-            Rounded Rectangle, Ellipse, Polygon) was Phase 1 scoping and is now
-            recorded as such rather than read as a removal. Whether the Arrow
-            ships as its own DrawShape variant or as start/end cap options on
-            Line is left to the Phase 2 task; the decision here is only that it
-            is in scope.
-  Rationale: Two readings were open — Phase 2 or documented non-goal — and the
-            spec's own mission settles it. §1.1 names "editing screenshots" as a
-            primary everyday task, and the arrow is that job's canonical
-            annotation primitive; recording it as a non-goal would drop a shape
-            more used than Polygon, which already shipped. The cost is small and
-            carries no architectural risk: DrawShape already carries stroke
-            width, dash pattern, anti-alias and the outline/fill/both modes, so
-            an arrow is arrowhead geometry on the existing rasterizer, not new
-            plumbing or a new wire concept. The non-goal answer would also have
-            required editing the spec to remove a capability — the more
-            expensive of the two outcomes in both directions.
-
 ADR-018: WebP export stays lossless, ADR-007 final — 2026-08
   Decision: ADR-007 is closed, not deferred: encode_webp produces lossless
             WebP and Fineliner ships no lossy WebP export. The spec §13.2
@@ -893,6 +873,56 @@ ADR-018: WebP export stays lossless, ADR-007 final — 2026-08
             question in STATUS.md for three months with no candidate encoder;
             recording it as final clears that decision debt without foreclosing
             the one condition that would change the answer.
+
+ADR-019: The Arrow shape is Phase 2, not a non-goal — 2026-08
+  Decision: The Arrow stays in spec §9.2's shape list and lands in Phase 2 with
+            the rest of the shape work. M10's shape list above (Line, Rectangle,
+            Rounded Rectangle, Ellipse, Polygon) was Phase 1 scoping and is now
+            recorded as such rather than read as a removal. Whether the Arrow
+            ships as its own DrawShape variant or as start/end cap options on
+            Line is left to the Phase 2 task; the decision here is only that it
+            is in scope.
+  Rationale: Two readings were open — Phase 2 or documented non-goal — and the
+            spec's own mission settles it. §1.1 names "editing screenshots" as a
+            primary everyday task, and the arrow is that job's canonical
+            annotation primitive; recording it as a non-goal would drop a shape
+            more used than Polygon, which already shipped. The cost is small and
+            carries no architectural risk: DrawShape already carries stroke
+            width, dash pattern, anti-alias and the outline/fill/both modes, so
+            an arrow is arrowhead geometry on the existing rasterizer, not new
+            plumbing or a new wire concept. The non-goal answer would also have
+            required editing the spec to remove a capability — the more
+            expensive of the two outcomes in both directions.
+
+ADR-020: ESLint + Prettier are approved dev dependencies for ui/ — 2026-08
+  Decision: ui/ gets ESLint and Prettier as dev dependencies, approved under §9
+            (eight packages: prettier, prettier-plugin-svelte, eslint,
+            @eslint/js, typescript-eslint, eslint-plugin-svelte,
+            eslint-config-prettier, globals). `pnpm lint` stops being an alias
+            of `pnpm check` and becomes `eslint .`; `pnpm format` and
+            `pnpm format:check` are new; both run in CI's UI job alongside
+            `pnpm check` and `pnpm build`. ESLint runs WITHOUT type-aware rules
+            (`tseslint.configs.recommended`, not `recommendedTypeChecked`), and
+            Prettier is configured to the style already in the tree — printWidth
+            110 was measured, not picked (reformatting src/ costs +246/-52 lines
+            at width 100, +109/-83 at 110, +92/-133 at 120).
+            ui/src/lib/core/generated/ is excluded from both tools: it is
+            committed ts-rs output whose diff CI already gates (ADR-014).
+  Rationale: §9 requires explicit sign-off for new package.json dependencies and
+            this records it; the sign-off was given for the tooling, not as a
+            standing exception. svelte-check was the only linter, and it checks
+            types, not lint classes — the first ESLint run found a real defect
+            it cannot see (Modal.svelte's svelte-ignore named two a11y codes and
+            only one still fired, so the comment was quietly suppressing nothing
+            for half its width). Staying type-unaware is what keeps the value:
+            the lint job needs no tsconfig program, no Rust toolchain and no
+            wasm-pack build, so it is a bare `pnpm install` away from running,
+            while svelte-check keeps owning the type pass.
+            Prettier settles formatting arguments mechanically; matching the
+            existing style rather than its defaults kept the one-time
+            reformatting diff small and left the deliberately tabular data
+            tables (adjustments.ts and friends) untouched.
+
 ```
 
 ---
