@@ -13,8 +13,24 @@ Der Hold ist **kein Archiv**. Die aktuelle Überlegung ist, dass Fineliner ein
 Modus einer gemeinsamen App wird (siehe `NEXT-PROMPTS.md` in amigo-pincel).
 Alles hier ist entweder Schuldenabbau oder Vorbereitung darauf.
 
-Gerade gelandet, noch nicht committet: `STATUS.md`, `CLAUDE.md` (ADR-018),
-`wrangler.jsonc`.
+---
+
+## Erledigt (PR „Chore/maintenance hold followups")
+
+Die ersten drei Prompts dieser Liste sind abgearbeitet und committet:
+
+1. **Spec-Divergenz aufgelöst.** `docs/specs/fineliner.md` §13.2 beschreibt
+   WebP jetzt als lossless-only, §17 hat das `quality`-Argument von
+   `export_webp` verloren, DL-008 ist der Spec-seitige Eintrag. ADR-018 in
+   CLAUDE.md ist die Entscheidung, ADR-007 damit endgültig geschlossen.
+2. **Die zwei offenen Entscheidungen sind entschieden.** Arrow-Shape → Phase 2,
+   kein Non-Goal (ADR-019). ESLint + Prettier → genehmigt und gelandet
+   (ADR-020): acht Dev-Dependencies, `pnpm lint` ist `eslint .`, `pnpm format` /
+   `pnpm format:check` sind neu, `ui/src` ist Prettier-formatiert bei
+   printWidth 110, und der CI-UI-Job führt `pnpm lint` + `pnpm format:check`
+   vor `pnpm check` aus. STATUS.md „Open questions" ist damit leer.
+3. **Zeilenenden.** `.gitattributes` pinnt `* text=auto eol=lf` repo-weit,
+   `*.sh` explizit; die Konvention steht in CLAUDE.md §6.4.
 
 ---
 
@@ -32,68 +48,11 @@ Zwei Dinge kann Claude Code nicht erledigen:
 
 ---
 
-## 1 — Die Spec-Divergenz auflösen
+## 1 — Was diese Hülle in eine gemeinsame App einbringt
 
-Der wichtigste Punkt. ADR-018 lässt eine Spec-Anforderung dauerhaft fallen;
-die Spec fordert sie weiter.
-
-```
-ADR-018 in CLAUDE.md hat die WebP-Frage als lossless-final geschlossen: die
-No-System-Deps-Regel schlägt die Spec-Anforderung, weil der pure-Rust
-`image`-Crate nur lossless encodiert. Spec §13.2 in docs/specs/fineliner.md
-verlangt aber weiterhin lossy WebP mit Qualität 1–100, und die Spec ist laut
-README die source of truth für Verhalten.
-
-CLAUDE.md §2.1 verlangt, dass die Spec bei einer Design-Divergenz nachgezogen
-wird, und §11 führt "Spec references updated if design shifted" in der
-Definition of Done. Zieh die Spec nach: §13.2 so ändern, dass sie lossless
-beschreibt, mit Verweis auf ADR-018 und auf die Bedingung, unter der das
-revidiert würde (ein tragfähiger pure-Rust Lossy-Encoder). Danach das
-Human-Action-Item in STATUS.md schließen.
-```
-
-## 2 — Die zwei offenen Entscheidungen
-
-```
-In STATUS.md stehen unter "Open questions" zwei Entscheidungen offen, die seit
-Monaten liegen. Beide sind klein, beide blockieren nichts, beide sollten
-entschieden statt weitergetragen werden.
-
-1) Arrow-Shape (spec §9.2): nicht in CLAUDE.md's M10-Shape-Liste. Phase 1 ist
-geschlossen, die Frage ist also, ob die Arrow in Phase 2 gehört oder als
-Non-Goal festgehalten wird.
-
-2) ESLint + Prettier für ui/: neue Dev-Dependencies, brauchen laut CLAUDE.md
-§9 ausdrückliche Genehmigung. Prüf, ob sie faktisch schon in ui/package.json
-stehen — falls ja, ist das eine nachzutragende Genehmigung und keine
-Entscheidung mehr.
-
-Arbeite beides begründet aus, schreib die Entscheidungen ins Decision Log bzw.
-in die ADR-Liste, und räum die "Open questions" entsprechend auf. Wenn du eine
-Frage nicht ohne mich entscheiden kannst, sag das statt zu raten.
-```
-
-## 3 — Zeilenenden
-
-Gleiche Baustelle wie im Schwesterrepo.
-
-```
-Dieses Repo hat kein .gitattributes und core.autocrlf=false, während das
-Working Tree CRLF ist und die committeten Blobs LF sind. Folge: `git status`
-zeigt ~120 Dateien als geändert, die reines Zeilenende-Rauschen sind (gleich
-viele Insertions wie Deletions pro Datei), und jeder Checkout auf einer
-anderen Plattform erzeugt den Diff neu.
-
-Leg ein .gitattributes an, das das dauerhaft löst, normalisiere den Index in
-EINEM separaten Commit, der nichts anderes anfasst, und schreib in CLAUDE.md
-fest, welche Konvention jetzt gilt.
-```
-
-## 4 — Was diese Hülle in eine gemeinsame App einbringt
-
-Die Gegenseite zum Design-Prompt in amigo-pincel. Sinnvoll erst, wenn der
-Modus-Entwurf dort steht — oder parallel, wenn du beide Seiten gleichzeitig
-beurteilen willst.
+Der einzige noch offene Prompt. Die Gegenseite zum Design-Prompt in
+amigo-pincel. Sinnvoll erst, wenn der Modus-Entwurf dort steht — oder parallel,
+wenn du beide Seiten gleichzeitig beurteilen willst.
 
 ```
 Wir überlegen, dieses Projekt und amigo-pincel unter eine gemeinsame UI zu
@@ -122,6 +81,6 @@ gebaut, hier nicht).
 ## Nicht anfassen
 
 Kein Feature-Work, solange der Hold gilt. 9D Free Transform ist ausdrücklich
-Phase 2. Der grafische Curves-Editor, die Channel-Mixer-UI und der
-Color-Balance-Layout-Feinschliff sind als Phase-2-Nachzügler dokumentiert und
-über die WASM-API ohnehin erreichbar.
+Phase 2, die Arrow-Shape ebenfalls (ADR-019). Der grafische Curves-Editor, die
+Channel-Mixer-UI und der Color-Balance-Layout-Feinschliff sind als
+Phase-2-Nachzügler dokumentiert und über die WASM-API ohnehin erreichbar.
