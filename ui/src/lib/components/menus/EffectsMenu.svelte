@@ -41,10 +41,7 @@
         {/if}
         <div class="px-3 py-0.5 text-xs uppercase tracking-wide text-neutral-500">{group.group}</div>
         {#each group.items as item (item.label)}
-          <button
-            class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
-            onclick={() => choose(item)}
-          >
+          <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => choose(item)}>
             {item.label}
           </button>
         {/each}

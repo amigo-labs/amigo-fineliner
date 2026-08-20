@@ -24,7 +24,7 @@ function scratchCanvas(width: number, height: number): HTMLCanvasElement {
 function paintCheckerboard(ctx: CanvasRenderingContext2D, width: number, height: number): void {
   for (let y = 0; y < height; y += CHECKER_SIZE) {
     for (let x = 0; x < width; x += CHECKER_SIZE) {
-      const dark = ((x / CHECKER_SIZE) + (y / CHECKER_SIZE)) % 2 === 0;
+      const dark = (x / CHECKER_SIZE + y / CHECKER_SIZE) % 2 === 0;
       ctx.fillStyle = dark ? CHECKER_DARK : CHECKER_LIGHT;
       ctx.fillRect(x, y, CHECKER_SIZE, CHECKER_SIZE);
     }

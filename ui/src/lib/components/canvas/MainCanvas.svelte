@@ -152,9 +152,7 @@
     text: 'text',
   };
   const cursor = $derived(toolCursors[tool.kind] ?? 'default');
-  const stageTransform = $derived(
-    `translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`,
-  );
+  const stageTransform = $derived(`translate(${view.panX}px, ${view.panY}px) scale(${view.zoom})`);
 
   onMount(() => {
     const detach = attachTools(canvas, redraw, placeText);
@@ -223,8 +221,7 @@
         class="absolute z-10 resize-none overflow-hidden whitespace-pre border border-dashed border-[var(--fl-accent)] bg-transparent p-0 leading-none outline-none"
         style="left: {textEntry.cx}px; top: {textEntry.cy}px; transform: translateX({entryShift}); text-align: {tool.textAlign}; font-size: {tool.fontSize}px; color: {tool.foreground}; font-family: 'Liberation Sans', Arial, sans-serif; font-weight: {tool.textBold
           ? 'bold'
-          : 'normal'}; font-style: {tool.textItalic ? 'italic' : 'normal'}; min-width: 4ch;"
-      ></textarea>
+          : 'normal'}; font-style: {tool.textItalic ? 'italic' : 'normal'}; min-width: 4ch;"></textarea>
     {/if}
   </div>
 
@@ -233,11 +230,22 @@
     <div
       class="absolute bottom-3 right-3 flex items-center gap-1 rounded border border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)]/90 px-1 py-0.5 text-xs shadow-lg"
     >
-      <button class="rounded px-2 py-0.5 hover:bg-neutral-700" onclick={() => setZoom(view.zoom / 1.25)} aria-label="Zoom out">−</button>
-      <button class="w-14 rounded px-1 py-0.5 text-center tabular-nums hover:bg-neutral-700" onclick={fitView}>
+      <button
+        class="rounded px-2 py-0.5 hover:bg-neutral-700"
+        onclick={() => setZoom(view.zoom / 1.25)}
+        aria-label="Zoom out">−</button
+      >
+      <button
+        class="w-14 rounded px-1 py-0.5 text-center tabular-nums hover:bg-neutral-700"
+        onclick={fitView}
+      >
         {Math.round(view.zoom * 100)}%
       </button>
-      <button class="rounded px-2 py-0.5 hover:bg-neutral-700" onclick={() => setZoom(view.zoom * 1.25)} aria-label="Zoom in">+</button>
+      <button
+        class="rounded px-2 py-0.5 hover:bg-neutral-700"
+        onclick={() => setZoom(view.zoom * 1.25)}
+        aria-label="Zoom in">+</button
+      >
       <button class="rounded px-2 py-0.5 hover:bg-neutral-700" onclick={() => setZoom(1)}>1:1</button>
     </div>
   {/if}

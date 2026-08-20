@@ -139,8 +139,24 @@ export type SelectionMode = 'replace' | 'add' | 'subtract' | 'intersect';
 
 /** Selection draws and modifiers (spec §8.3, §8.4 / §9.3). */
 export type SelectionCommand =
-  | { type: 'select_rectangle'; x: number; y: number; w: number; h: number; mode: SelectionMode; feather: number }
-  | { type: 'select_ellipse'; x: number; y: number; w: number; h: number; mode: SelectionMode; feather: number }
+  | {
+      type: 'select_rectangle';
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      mode: SelectionMode;
+      feather: number;
+    }
+  | {
+      type: 'select_ellipse';
+      x: number;
+      y: number;
+      w: number;
+      h: number;
+      mode: SelectionMode;
+      feather: number;
+    }
   | { type: 'select_polygon'; points: Array<[number, number]>; mode: SelectionMode; feather: number }
   | {
       type: 'select_wand';
