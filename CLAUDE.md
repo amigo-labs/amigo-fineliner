@@ -214,6 +214,7 @@ M9  Transform tools
 
 M10  Shapes + Text tools
     └─ Shapes: Line, Rectangle, Rounded Rectangle, Ellipse, Polygon (N-sided)
+       (spec §9.2 also lists Arrow — Phase 2, not dropped; see ADR-019)
     └─ Shape modes: Outline, Fill, Fill+Outline
     └─ Stroke width + dash pattern
     └─ Text tool: font family, size, bold, italic, color, anti-alias
@@ -848,6 +849,26 @@ ADR-017: WASM effects API for M11 — 2026-07
             shows the true result through blend modes and opacity. Indices and
             snake_case strings follow the established tool-option/command
             convention.
+
+ADR-019: The Arrow shape is Phase 2, not a non-goal — 2026-08
+  Decision: The Arrow stays in spec §9.2's shape list and lands in Phase 2 with
+            the rest of the shape work. M10's shape list above (Line, Rectangle,
+            Rounded Rectangle, Ellipse, Polygon) was Phase 1 scoping and is now
+            recorded as such rather than read as a removal. Whether the Arrow
+            ships as its own DrawShape variant or as start/end cap options on
+            Line is left to the Phase 2 task; the decision here is only that it
+            is in scope.
+  Rationale: Two readings were open — Phase 2 or documented non-goal — and the
+            spec's own mission settles it. §1.1 names "editing screenshots" as a
+            primary everyday task, and the arrow is that job's canonical
+            annotation primitive; recording it as a non-goal would drop a shape
+            more used than Polygon, which already shipped. The cost is small and
+            carries no architectural risk: DrawShape already carries stroke
+            width, dash pattern, anti-alias and the outline/fill/both modes, so
+            an arrow is arrowhead geometry on the existing rasterizer, not new
+            plumbing or a new wire concept. The non-goal answer would also have
+            required editing the spec to remove a capability — the more
+            expensive of the two outcomes in both directions.
 
 ADR-018: WebP export stays lossless, ADR-007 final — 2026-08
   Decision: ADR-007 is closed, not deferred: encode_webp produces lossless
