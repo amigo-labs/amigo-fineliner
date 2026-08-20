@@ -404,6 +404,28 @@ ui/src/
 - Tables for structured comparisons
 - One blank line above and below code blocks and tables
 
+### 6.4 Line endings
+
+**LF everywhere.** `.gitattributes` declares `* text=auto eol=lf`: every text
+file is stored LF in the repository and checked out LF in the working tree.
+
+- Do not rely on `core.autocrlf`. It is a per-installation setting (Git for
+  Windows ships it as `true`, plain Git as `false`), so a repo that depends on
+  it has line endings that vary by machine. The attributes file wins over
+  `core.autocrlf`, which is the point of having it.
+- `eol=lf` rather than `eol=native` because the toolchain is LF-native end to
+  end: CI runs on Linux runners, `scripts/cf-build.sh` runs in Cloudflare's
+  Linux build image, and rustfmt / svelte-check / Vite all emit LF.
+- `*.sh` is pinned `text eol=lf` explicitly. A CRLF shebang fails in the Linux
+  build image, so this one is correctness, not tidiness.
+- Binary types (fonts, images, `.wasm`, `.fln`, archives) are declared `binary`
+  so they are never converted or diffed as text.
+- A working tree cloned before this file existed can still hold CRLF on disk.
+  That is harmless — the clean filter normalizes on `git add`, so `git status`
+  stays quiet. To make disk match the declaration:
+  `git ls-files -z | xargs -0 rm -f && git checkout -- .` (safe only with a
+  clean tree; it rewrites every file's mtime and so forces a full rebuild).
+
 ---
 
 ## 7. Testing Requirements
@@ -875,6 +897,7 @@ CLAUDE.md                       This file — how to build it
 STATUS.md                       Current session state, next task
 README.md                       Prerequisites, clone→run, verification
 .github/workflows/ci.yml        CI gate (fmt, clippy, test, pnpm check/build)
+.gitattributes                  LF line endings, repo-wide (§6.4)
 .claude/skills/                 Project-specific skill recipes (planned, §14)
 
 crates/fineliner-core/          Pure logic, no I/O, no platform
