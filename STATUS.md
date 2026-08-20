@@ -41,10 +41,10 @@ What the hold means:
 - **One human action item is open:** restricting Cloudflare production deploys
   to `main` (a dashboard setting, not a `wrangler.jsonc` key — see "Release
   automation + Cloudflare deploy" below).
-- **Two decisions are still open:** whether the Arrow shape (spec §9.2) enters
-  Phase 2 at all, and whether `ui/` gets ESLint + Prettier (new dev
-  dependencies, so CLAUDE.md §9 approval). The hold parks them, it does not
-  answer them — both are in "Open questions" below.
+- **Both open decisions are closed (2026-08-20).** The Arrow shape (spec §9.2)
+  is in Phase 2's scope, not a non-goal (ADR-019), and `ui/` has ESLint +
+  Prettier with the §9 dependency approval recorded (ADR-020) and both tools in
+  the CI gate. No decision is parked; "Open questions" below is empty.
 
 Recording the hold changed no code, only the recorded state. This section is the
 authoritative record of it; the marker further down points back here.
@@ -319,7 +319,8 @@ approved (ab_glyph) with the UI supplying font bytes (Option B), per ADR-012.
 
 ### Known limitations / follow-ups
 
-- **Arrow shape** (spec §9.2) is deferred — not in CLAUDE.md's M10 shape list.
+- **Arrow shape** (spec §9.2) is deferred to Phase 2, in scope there and not a
+  non-goal (ADR-019) — it was never in CLAUDE.md's M10 shape list.
 - Bold/italic are synthesized (faux); real font-family selection and multiple
   faces are Phase 2 (ADR-003, ADR-012).
 - The text-entry overlay is a single textarea (foreground-colored live preview);
@@ -384,8 +385,9 @@ description.
 - **Anti-aliased selection edges** (spec §9.3) — rect/ellipse/lasso/wand masks
   are hard-edged; the "anti-alias" option is unimplemented (M8 deferral).
 - **Arrow shape** (spec §9.2) — not in CLAUDE.md's M10 shape list and Phase 1
-  closed without it; the open decision is whether it enters Phase 2's shape set
-  or becomes a documented non-goal (see "Open questions").
+  closed without it. **Decided 2026-08-20 (ADR-019):** it joins Phase 2's shape
+  set rather than becoming a non-goal; whether it ships as its own `DrawShape`
+  variant or as start/end caps on Line is left to that task.
 - ~~**Lossy WebP export** (ADR-007 open question)~~ — **CLOSED** (2026-08):
   lossless stays, decision final (ADR-018). Not a gap to fill; reopen only if a
   pure-Rust lossy WebP encoder becomes viable.
@@ -399,9 +401,12 @@ description.
 
 ### DX / infra
 
-- **ESLint + Prettier for `ui/`** — new dev dependencies, needs explicit
-  approval per CLAUDE.md §9; svelte-check is the only linter today. Still an
-  open decision — see "Open questions".
+- ~~**ESLint + Prettier for `ui/`**~~ — **DONE 2026-08-20 (ADR-020):** eight
+  dev dependencies approved under CLAUDE.md §9 and landed. `pnpm lint` is
+  `eslint .` (no longer an alias of `pnpm check`), `pnpm format` /
+  `pnpm format:check` are new, `ui/src` is Prettier-formatted at printWidth 110,
+  and CI's UI job runs `pnpm lint` + `pnpm format:check` before `pnpm check`.
+  ESLint is deliberately not type-aware — svelte-check owns the type pass.
 - **UI tests (Vitest/Playwright)** — Phase 3 (§7.5). The round-2 Playwright
   verification script is a session artifact, not checked in; it would be the
   seed for `pnpm test:e2e`.
@@ -559,17 +564,17 @@ open. This marker only keeps the milestone record pointing there.
 
 ## Open questions
 
-Two decisions are open; the WebP question and its spec amendment are both
-closed.
+**None.** All four are closed as of 2026-08-20; they stay listed below as the
+record of what was decided and why.
 
-- **Arrow shape** (spec §9.2) — not in CLAUDE.md's M10 shape list, and Phase 1
-  closed without it, so the question is now a Phase 2 scoping one: does the
-  Arrow join Phase 2's shape set, or is it recorded as a non-goal? Context in
-  the backlog under "Feature gaps".
-- **ESLint + Prettier for `ui/`** — new dev dependencies, so they need explicit
-  approval per CLAUDE.md §9 before anyone adds them; svelte-check is still the
-  only linter. Tooling rather than feature surface, so the hold does not decide
-  it. Context in the backlog under "DX / infra".
+- ~~**Arrow shape** (spec §9.2)~~ — **CLOSED 2026-08-20 (ADR-019):** the Arrow
+  is in Phase 2's shape set, not a documented non-goal. The spec keeps listing
+  it; CLAUDE.md's M10 list is recorded as Phase 1 scoping rather than a removal.
+  Form (own `DrawShape` variant vs. start/end caps on Line) is a Phase 2 call.
+- ~~**ESLint + Prettier for `ui/`**~~ — **CLOSED 2026-08-20 (ADR-020):** both
+  are approved dev dependencies and have landed, with the §9 sign-off recorded
+  in the Decision Log. They run in the CI gate, so the tooling is enforced and
+  not merely available. Context in the backlog under "DX / infra".
 - ~~**Human action item — amend spec §13.2**~~ — **DONE 2026-08-20:** the spec
   now matches ADR-018. `docs/specs/fineliner.md` §13.2 states lossless-only with
   the reasoning, §17's `export_webp` signature dropped its `quality` argument to
