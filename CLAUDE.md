@@ -541,8 +541,14 @@ pnpm install
 pnpm dev                                      # Vite dev server (WASM hot-reload)
 pnpm build                                    # production bundle
 pnpm check                                    # WASM build + svelte-check TypeScript
-pnpm lint                                     # alias of `check` (no ESLint in Phase 1)
+pnpm lint                                     # ESLint (ADR-020)
+pnpm lint:fix                                 # ESLint with --fix
+pnpm format                                   # Prettier, write
+pnpm format:check                             # Prettier, verify only (CI uses this)
 ```
+
+`pnpm lint` and `pnpm format:check` need only `pnpm install` — no Rust
+toolchain, no wasm-pack build — so run them first when iterating.
 
 `pnpm test` (Vitest) and `pnpm test:e2e` (Playwright) do not exist yet — UI
 tests are a Phase 3 item (§7.5).
@@ -567,7 +573,7 @@ wrangler pages deploy ui/dist                 # or via CI
 cargo fmt && \
 cargo clippy --workspace -- -D warnings && \
 cargo test --workspace && \
-cd ui && pnpm check && pnpm build
+cd ui && pnpm lint && pnpm format:check && pnpm check && pnpm build
 ```
 
 All steps must pass. Do not commit if any step fails.
@@ -589,7 +595,7 @@ A task is done when **all** of the following hold:
 
 For UI tasks add:
 
-- [ ] `pnpm lint` and `pnpm check` clean
+- [ ] `pnpm lint`, `pnpm format:check` and `pnpm check` clean
 - [ ] `pnpm build` succeeds
 - [ ] Visually verified in dev server
 - [ ] Pointer events used (not mouse events)
@@ -948,7 +954,7 @@ docs/specs/fineliner.md         The spec — what to build
 CLAUDE.md                       This file — how to build it
 STATUS.md                       Current session state, next task
 README.md                       Prerequisites, clone→run, verification
-.github/workflows/ci.yml        CI gate (fmt, clippy, test, pnpm check/build)
+.github/workflows/ci.yml        CI gate (fmt, clippy, test, pnpm lint/format/check/build)
 .gitattributes                  LF line endings, repo-wide (§6.4)
 .claude/skills/                 Project-specific skill recipes (planned, §14)
 
