@@ -62,6 +62,8 @@ fn paint_then_undo_then_export_matches_original() {
     // Every pixel back to white after undo.
     assert!(back
         .data()
-        .chunks_exact(4)
-        .all(|p| p == [255, 255, 255, 255]));
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .all(|p| p == &[255, 255, 255, 255]));
 }
