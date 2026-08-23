@@ -31,7 +31,12 @@ What the hold means:
   full gate (CLAUDE.md §10) decides whether they merge. Pushes to `main` still
   auto-publish a patch release (ADR-016) and still deploy `ui/dist`.
 - **Fixes, not features.** A regression in shipped behaviour is in scope. New
-  surface is not — including every backlog entry below.
+  surface is not — including every backlog entry below. Toolchain drift counts
+  as a fix: CI pins no Rust version (`dtolnay/rust-toolchain@stable`), so a new
+  stable can turn the workspace red without a commit. First instance 2026-08-20
+  — Rust 1.98.0 enabled `clippy::chunks_exact_to_as_chunks`, which `-D warnings`
+  makes fatal at 25 constant-size `chunks_exact`/`_mut` call sites across both
+  crates; migrated to `as_chunks::<N>().0`, no behaviour change.
 - **9D Free Transform is Phase 2.** It was the last optional Phase 1 task; it is
   now explicitly out of Phase 1 (see M9 and the backlog).
 - **ADR-007 is closed, spec included.** WebP export stays lossless, final —
