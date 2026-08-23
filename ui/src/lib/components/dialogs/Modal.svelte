@@ -44,7 +44,7 @@
   onclick={onClose}
   onkeydown={onKeydown}
 >
-  <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+  <!-- svelte-ignore a11y_click_events_have_key_events -->
   <div
     bind:this={panel}
     class="w-72 rounded-lg border border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] p-4 text-sm text-neutral-200"

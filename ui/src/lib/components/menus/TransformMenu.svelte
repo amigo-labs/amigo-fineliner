@@ -43,10 +43,7 @@
 
   {#if open !== null}
     <!-- Backdrop closes the menu on an outside click. -->
-    <button
-      class="fixed inset-0 z-40 cursor-default"
-      aria-label="Close menu"
-      onclick={() => (open = null)}
+    <button class="fixed inset-0 z-40 cursor-default" aria-label="Close menu" onclick={() => (open = null)}
     ></button>
   {/if}
 
@@ -54,15 +51,42 @@
     <div
       class="absolute left-0 top-8 z-50 w-52 rounded border border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] py-1 text-sm shadow-xl"
     >
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => flipCanvas(true))}>Flip Horizontal</button>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => flipCanvas(false))}>Flip Vertical</button>
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => flipCanvas(true))}>Flip Horizontal</button
+      >
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => flipCanvas(false))}>Flip Vertical</button
+      >
       <div class="my-1 border-t border-[var(--fl-panel-border)]"></div>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => rotateCanvas('cw90'))}>Rotate 90° CW</button>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => rotateCanvas('ccw90'))}>Rotate 90° CCW</button>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => rotateCanvas('rotate_180'))}>Rotate 180°</button>
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => rotateCanvas('cw90'))}>Rotate 90° CW</button
+      >
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => rotateCanvas('ccw90'))}>Rotate 90° CCW</button
+      >
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => rotateCanvas('rotate_180'))}>Rotate 180°</button
+      >
       <div class="my-1 border-t border-[var(--fl-panel-border)]"></div>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => { open = null; dialog = 'resize'; }}>Resize Canvas…</button>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => { open = null; dialog = 'scale'; }}>Scale Image…</button>
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => {
+          open = null;
+          dialog = 'resize';
+        }}>Resize Canvas…</button
+      >
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => {
+          open = null;
+          dialog = 'scale';
+        }}>Scale Image…</button
+      >
       <button
         class="block w-full px-3 py-1 text-left hover:bg-neutral-700 disabled:opacity-40"
         disabled={!editor.hasSelection}
@@ -77,12 +101,27 @@
     <div
       class="absolute left-14 top-8 z-50 w-52 rounded border border-[var(--fl-panel-border)] bg-[var(--fl-panel-bg)] py-1 text-sm shadow-xl"
     >
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => transformLayer('flip_h'))}>Flip Horizontal</button>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => transformLayer('flip_v'))}>Flip Vertical</button>
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => transformLayer('flip_h'))}>Flip Horizontal</button
+      >
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => transformLayer('flip_v'))}>Flip Vertical</button
+      >
       <div class="my-1 border-t border-[var(--fl-panel-border)]"></div>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => rotateLayer90(false))}>Rotate 90° CW</button>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => rotateLayer90(true))}>Rotate 90° CCW</button>
-      <button class="block w-full px-3 py-1 text-left hover:bg-neutral-700" onclick={() => run(() => transformLayer('rotate_180'))}>Rotate 180°</button>
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => rotateLayer90(false))}>Rotate 90° CW</button
+      >
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => rotateLayer90(true))}>Rotate 90° CCW</button
+      >
+      <button
+        class="block w-full px-3 py-1 text-left hover:bg-neutral-700"
+        onclick={() => run(() => transformLayer('rotate_180'))}>Rotate 180°</button
+      >
     </div>
   {/if}
 </div>

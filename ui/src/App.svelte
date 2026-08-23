@@ -1,13 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import {
-    editor,
-    tool,
-    ui,
-    resetColors,
-    swapColors,
-    type ToolKind,
-  } from './lib/stores/editor.svelte';
+  import { editor, tool, ui, resetColors, swapColors, type ToolKind } from './lib/stores/editor.svelte';
   import {
     newDocument,
     openFile,
@@ -102,11 +95,7 @@
   function onKeydown(e: KeyboardEvent): void {
     // Ignore shortcuts while typing in a field (text-entry overlay included)
     // or while a modal dialog owns the keyboard.
-    if (
-      ui.modalOpen ||
-      e.target instanceof HTMLInputElement ||
-      e.target instanceof HTMLTextAreaElement
-    ) {
+    if (ui.modalOpen || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
       return;
     }
     const ctrl = e.ctrlKey || e.metaKey;
@@ -177,9 +166,7 @@
     >
       New
     </button>
-    <button class="rounded px-2 py-1 hover:bg-neutral-700" onclick={() => fileInput.click()}>
-      Open…
-    </button>
+    <button class="rounded px-2 py-1 hover:bg-neutral-700" onclick={() => fileInput.click()}> Open… </button>
     <div class="relative">
       <button
         class="rounded px-2 py-1 hover:bg-neutral-700"

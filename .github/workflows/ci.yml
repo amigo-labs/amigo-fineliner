@@ -25,7 +25,7 @@ jobs:
         run: git diff --exit-code ui/src/lib/core/generated/
 
   ui:
-    name: UI (svelte-check, build)
+    name: UI (lint, format, svelte-check, build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,5 +47,9 @@ jobs:
           cache: pnpm
           cache-dependency-path: ui/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      # ESLint and Prettier first (ADR-020): neither needs the wasm build, so a
+      # lint or formatting failure reports in seconds instead of after wasm-pack.
+      - run: pnpm lint
+      - run: pnpm format:check
       - run: pnpm check
       - run: pnpm build

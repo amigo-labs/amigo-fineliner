@@ -806,10 +806,20 @@ Export always flattens the document composite to a single image.
 |---|---|
 | PNG | Compression 0–9 |
 | JPEG | Quality 1–100 |
-| WebP | Lossy (quality 1–100) / Lossless |
+| WebP | Lossless only — no quality option (DL-008) |
 | BMP | None |
 
 Export does not modify the document's "saved" state.
+
+**WebP export is lossless-only, and this is final** (DL-008, mirroring ADR-018
+in `CLAUDE.md` §13). Encoding lossy WebP requires libwebp, a C library, while
+`CLAUDE.md` forbids system dependencies and the pure-Rust `image` crate encodes
+lossless WebP only. The requirement this table carried until 2026-08 ("Lossy
+(quality 1–100) / Lossless") is withdrawn rather than deferred. It is revisited
+only if a viable pure-Rust lossy WebP encoder appears, and then as a new
+Decision Log entry, not as a reversal of DL-008. PNG and JPEG remain the
+lossless/lossy export pair. Import is unaffected — §13.1 reads both lossy and
+lossless WebP, because decoding needs no encoder.
 
 ### 13.3 Save / Save As
 
@@ -1058,7 +1068,8 @@ export function redo(handle: DocumentHandle): boolean;
 // Export
 export function export_png(handle: DocumentHandle): Uint8Array;
 export function export_jpeg(handle: DocumentHandle, quality: number): Uint8Array;
-export function export_webp(handle: DocumentHandle, quality: number): Uint8Array;
+export function export_webp(handle: DocumentHandle): Uint8Array;
+// Lossless; there is deliberately no quality parameter (DL-008).
 
 // Project
 export function save_project(handle: DocumentHandle): Uint8Array;
@@ -1211,8 +1222,21 @@ DL-006: Blend mode math in linear light — 2026-05
 DL-007: Selection mask is RGBA8 grayscale (u8 per pixel) — 2026-05
   255 = fully selected, 0 = not selected, 1–254 = partial.
   Rationale: Uniform format with image pixels, enables feathering naturally.
+
+DL-008: WebP export is lossless-only, permanently — 2026-08
+  encode_webp / export_webp produce lossless WebP and take no quality
+  parameter. §13.2's earlier "Lossy (quality 1–100) / Lossless" requirement is
+  withdrawn, and §17's export_webp signature drops its quality argument.
+  Mirrors ADR-018 in CLAUDE.md §13, which closes ADR-007.
+  Rationale: Lossy WebP encoding needs libwebp, a C library, and CLAUDE.md's
+  no-system-dependency rule (§4 M4, §5.1, §9) is the stronger of the two
+  constraints — it is what keeps a single `cargo build` / `wasm-pack build`
+  working on every platform, and on wasm32 at all. The pure-Rust `image` crate
+  encodes lossless only. Lossy WebP is one option in an export matrix that
+  already ships a lossless codec (PNG) and a lossy one (JPEG). Reopen only if a
+  viable pure-Rust lossy encoder appears — as a new DL entry, not a reversal.
 ```
 
 ---
 
-*Last updated: 2026-05. Amend in place via PR with a DL entry for significant decisions.*
+*Last updated: 2026-08. Amend in place via PR with a DL entry for significant decisions.*

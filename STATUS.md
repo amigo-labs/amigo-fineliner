@@ -1,6 +1,60 @@
 # STATUS
 
-## Current state — M1–M6 complete (basic tool suite)
+## Current state — v1.0 scope complete, maintenance hold (2026-08-20)
+
+Fineliner is functionally complete at its v1.0 scope and is now in a deliberate
+maintenance hold while its sibling project catches up. This is a hold, not an
+end of life: the current thinking is that Fineliner becomes one mode of a
+unified app later, so the crates, the WASM API, the release automation and the
+live deploy all stay exactly as they are. ("v1.0" is the scope, not a tag —
+released versions are auto-incremented patch tags seeded at v0.1.0, ADR-016.)
+
+Shipped: **M1–M12** — foundations, commands + undo, compositing, codecs,
+WASM + UI, the basic tool suite, layers, selections, transforms, shapes + text,
+effects and adjustments — bar M9's optional 9D Free Transform task, which is now
+Phase 2. Release automation and the Cloudflare Workers deploy have been live
+since 2026-07. Test counts stay as recorded per milestone below (last recorded:
+194 `fineliner-core` tests, 68 `fineliner-effects` tests, plus the
+`fineliner-wasm` binding tests).
+
+What the hold means:
+
+- **No feature work.** M13 (advanced tools), M14 (Tauri shell) and M16 (the
+  performance pass) are not started, and M15 (PWA + Cloudflare deployment) has
+  no PWA deliverable recorded here — no service worker, IndexedDB autosave,
+  recent-files registry, OPFS, manifest/icons or offline mode. What is live is
+  the `ui/dist` bundle deploy, and it is tracked under "Release automation +
+  Cloudflare deploy" below rather than as M15 progress. Nothing is scheduled;
+  the backlog below stays as the record of what was deferred and why, not as a
+  queue.
+- **Dependabot stays on.** Dependency bumps are the expected inbound change; the
+  full gate (CLAUDE.md §10) decides whether they merge. Pushes to `main` still
+  auto-publish a patch release (ADR-016) and still deploy `ui/dist`.
+- **Fixes, not features.** A regression in shipped behaviour is in scope. New
+  surface is not — including every backlog entry below. Toolchain drift counts
+  as a fix: CI pins no Rust version (`dtolnay/rust-toolchain@stable`), so a new
+  stable can turn the workspace red without a commit. First instance 2026-08-20
+  — Rust 1.98.0 enabled `clippy::chunks_exact_to_as_chunks`, which `-D warnings`
+  makes fatal at 25 constant-size `chunks_exact`/`_mut` call sites across both
+  crates; migrated to `as_chunks::<N>().0`, no behaviour change.
+- **9D Free Transform is Phase 2.** It was the last optional Phase 1 task; it is
+  now explicitly out of Phase 1 (see M9 and the backlog).
+- **ADR-007 is closed, spec included.** WebP export stays lossless, final —
+  ADR-018 in CLAUDE.md §13, and since 2026-08-20 the spec agrees: §13.2 no
+  longer asks for lossy WebP, §17's `export_webp` no longer takes a quality
+  argument, and DL-008 records it on the spec side.
+- **One human action item is open:** restricting Cloudflare production deploys
+  to `main` (a dashboard setting, not a `wrangler.jsonc` key — see "Release
+  automation + Cloudflare deploy" below).
+- **Both open decisions are closed (2026-08-20).** The Arrow shape (spec §9.2)
+  is in Phase 2's scope, not a non-goal (ADR-019), and `ui/` has ESLint +
+  Prettier with the §9 dependency approval recorded (ADR-020) and both tools in
+  the CI gate. No decision is parked; "Open questions" below is empty.
+
+Recording the hold changed no code, only the recorded state. This section is the
+authoritative record of it; the marker further down points back here.
+
+## M1–M6 complete (basic tool suite)
 
 The foundational pipeline plus the M6 tool suite are implemented and verified:
 open/export, undo/redo, and Pencil (hard/soft/flat), Eraser, Fill, Eyedropper
@@ -159,7 +213,7 @@ Milestone was XL; split into M tasks (core test-first, then WASM, then UI):
 - Overlay rebuilds the boundary path on every document mutation (O(canvas));
   fine for Phase 1, a dirty-rect optimization belongs to M16.
 
-## M9 — transform tools (complete bar optional Free Transform)
+## M9 — transform tools (complete; 9D Free Transform is Phase 2)
 
 Milestone is XL; split into M tasks (core test-first, then commands, then UI):
 
@@ -179,11 +233,12 @@ Milestone is XL; split into M tasks (core test-first, then commands, then UI):
   `transform::scale`, resizes canvas, snapshot undo); `CropToSelection` (canvas
   ← selection bbox, layers cropped, snapshot undo, ADR-010 clips outside pixels);
   `RotateLayer90` (rotate + center-fit into canvas dims, snapshot undo). 9 tests.
-- [ ] **9D — Free Transform math** (core, optional for Phase 1): compose
+- [ ] **9D — Free Transform math** (core, **Phase 2 as of 2026-08**): compose
   translate/scale/rotate into one affine applied to a layer with chosen
-  interpolation (spec §10.1 interactive). Can be deferred — the discrete
-  transforms + scale cover the M9 exit criteria; Free Transform is the
-  interactive handle UI's backing math.
+  interpolation (spec §10.1 interactive). It was the milestone's one optional
+  task — the discrete transforms + scale cover the M9 exit criteria — and that
+  deferral is now final: M9 closed without it. Free Transform is the interactive
+  handle UI's backing math, so it lands with that UI in Phase 2.
 - [x] **9E — WASM bindings** (ADR-011): `apply_command`'s `CommandSpec` gained
   `TransformLayer` (flip_h/flip_v/rotate_180), `RotateLayer90` (ccw),
   `FlipCanvas` (horizontal), `RotateCanvas` (cw90/ccw90/rotate_180), `ScaleImage`
@@ -203,8 +258,7 @@ Milestone is XL; split into M tasks (core test-first, then commands, then UI):
 
 The transform core is complete enough for the M9 exit criteria: flips, rotate
 90/180 (layer + canvas), scale image (nearest/bilinear/bicubic), resize canvas
-(9-grid anchor), and crop to selection are all implemented and undoable. Only
-the WASM bindings and UI remain (plus optional interactive Free Transform).
+(9-grid anchor), and crop to selection are all implemented and undoable.
 
 ### Verification (M9)
 
@@ -221,8 +275,10 @@ the WASM bindings and UI remain (plus optional interactive Free Transform).
 
 - **Free Transform (spec §10.1, task 9D)** — interactive translate/scale/rotate
   handles (Ctrl+T) are not implemented. The discrete transforms + Scale dialog
-  cover the M9 exit criteria; the affine math + handle UI is a follow-up.
-- Arbitrary-angle canvas rotation (spec §10.3) is deferred with Free Transform.
+  cover the M9 exit criteria; the affine math + handle UI is a follow-up —
+  **Phase 2 as of 2026-08**, not a Phase 1 gap.
+- Arbitrary-angle canvas rotation (spec §10.3) is deferred with Free Transform,
+  and therefore Phase 2 as well.
 
 ## M10 — shapes + text (complete)
 
@@ -268,7 +324,8 @@ approved (ab_glyph) with the UI supplying font bytes (Option B), per ADR-012.
 
 ### Known limitations / follow-ups
 
-- **Arrow shape** (spec §9.2) is deferred — not in CLAUDE.md's M10 shape list.
+- **Arrow shape** (spec §9.2) is deferred to Phase 2, in scope there and not a
+  non-goal (ADR-019) — it was never in CLAUDE.md's M10 shape list.
 - Bold/italic are synthesized (faux); real font-family selection and multiple
   faces are Phase 2 (ADR-003, ADR-012).
 - The text-entry overlay is a single textarea (foreground-colored live preview);
@@ -328,13 +385,17 @@ description.
   today). M-sized; the API is the prerequisite.
 - **Free Transform** (spec §10.1, task 9D; Ctrl+T) — interactive
   translate/scale/rotate handles + the affine math. Arbitrary-angle canvas
-  rotation (spec §10.3) rides along with it.
+  rotation (spec §10.3) rides along with it. **Phase 2 (2026-08)** — moved out
+  of Phase 1 with the maintenance hold, not merely unscheduled.
 - **Anti-aliased selection edges** (spec §9.3) — rect/ellipse/lasso/wand masks
   are hard-edged; the "anti-alias" option is unimplemented (M8 deferral).
-- **Arrow shape** (spec §9.2) — not in CLAUDE.md's M10 shape list; decide
-  whether it enters Phase 1 at all.
-- **Lossy WebP export** (ADR-007 open question) — pure-Rust `image` only
-  encodes lossless; accepting a new encoder dependency needs a decision.
+- **Arrow shape** (spec §9.2) — not in CLAUDE.md's M10 shape list and Phase 1
+  closed without it. **Decided 2026-08-20 (ADR-019):** it joins Phase 2's shape
+  set rather than becoming a non-goal; whether it ships as its own `DrawShape`
+  variant or as start/end caps on Line is left to that task.
+- ~~**Lossy WebP export** (ADR-007 open question)~~ — **CLOSED** (2026-08):
+  lossless stays, decision final (ADR-018). Not a gap to fill; reopen only if a
+  pure-Rust lossy WebP encoder becomes viable.
 
 ### UX polish (small, unscheduled)
 
@@ -345,8 +406,12 @@ description.
 
 ### DX / infra
 
-- **ESLint + Prettier for `ui/`** — new dev dependencies, needs explicit
-  approval per CLAUDE.md §9; svelte-check is the only linter today.
+- ~~**ESLint + Prettier for `ui/`**~~ — **DONE 2026-08-20 (ADR-020):** eight
+  dev dependencies approved under CLAUDE.md §9 and landed. `pnpm lint` is
+  `eslint .` (no longer an alias of `pnpm check`), `pnpm format` /
+  `pnpm format:check` are new, `ui/src` is Prettier-formatted at printWidth 110,
+  and CI's UI job runs `pnpm lint` + `pnpm format:check` before `pnpm check`.
+  ESLint is deliberately not type-aware — svelte-check owns the type pass.
 - **UI tests (Vitest/Playwright)** — Phase 3 (§7.5). The round-2 Playwright
   verification script is a session artifact, not checked in; it would be the
   seed for `pnpm test:e2e`.
@@ -480,16 +545,50 @@ apply_effect/preview_effect path as effects (EffectSpec gained the variants).
   whose `build` script runs `scripts/cf-build.sh`, so the default command now
   resolves and installs Rust/wasm-pack before building `ui/dist`. If the build
   still fails, the Cloudflare log shows the next step (likely toolchain/time).
-- [ ] **Optional:** limit Git-integration deploys to the `main` branch (it
-  currently builds PR branches as "production").
+- [ ] **Human action item — restrict production deploys to `main`
+  (dashboard-only).** Workers Builds currently builds PR branches as
+  "production". This cannot be expressed in `wrangler.jsonc`: branch control is
+  part of the Workers Builds Git-integration configuration in the Cloudflare
+  dashboard, next to the build command, deploy command and root directory, while
+  wrangler config describes the Worker and its assets. Deliberately not guessed
+  — an invented key here would be silently ignored and the setup would look
+  fixed while PR branches kept deploying to production. Needs a human with
+  dashboard access; until then, assume any PR-branch push can reach the live
+  deploy.
 
 The full pointer-event `Tool` trait (spec §9.1) is still deferred; tools keep
 the "stroke/seed → command" shape — fold the trait in when a tool needs richer
 modifier/cursor state.
 
+## Maintenance hold — v1.0 scope closed (2026-08-20)
+
+Recorded in full at the top of this file ("Current state") — what the hold
+covers, what closed with it (ADR-007 as ADR-018, 9D Free Transform as Phase 2,
+the Cloudflare branch restriction as a manual dashboard step) and what stays
+open. This marker only keeps the milestone record pointing there.
+
 ## Open questions
 
-- **WebP lossy export** (ADR-007): the spec §13.2 asks for lossy quality 1–100,
-  but the pure-Rust `image` crate only encodes lossless WebP and CLAUDE.md
-  forbids system deps. Currently lossless only. Decide whether to accept a
-  pure-Rust lossy encoder dependency or keep lossless.
+**None.** All four are closed as of 2026-08-20; they stay listed below as the
+record of what was decided and why.
+
+- ~~**Arrow shape** (spec §9.2)~~ — **CLOSED 2026-08-20 (ADR-019):** the Arrow
+  is in Phase 2's shape set, not a documented non-goal. The spec keeps listing
+  it; CLAUDE.md's M10 list is recorded as Phase 1 scoping rather than a removal.
+  Form (own `DrawShape` variant vs. start/end caps on Line) is a Phase 2 call.
+- ~~**ESLint + Prettier for `ui/`**~~ — **CLOSED 2026-08-20 (ADR-020):** both
+  are approved dev dependencies and have landed, with the §9 sign-off recorded
+  in the Decision Log. They run in the CI gate, so the tooling is enforced and
+  not merely available. Context in the backlog under "DX / infra".
+- ~~**Human action item — amend spec §13.2**~~ — **DONE 2026-08-20:** the spec
+  now matches ADR-018. `docs/specs/fineliner.md` §13.2 states lossless-only with
+  the reasoning, §17's `export_webp` signature dropped its `quality` argument to
+  match the implementation, and DL-008 is the spec-side record. This satisfies
+  CLAUDE.md §2.1 (spec follows a diverging decision) and §11's "Spec references
+  updated if design shifted"; no human edit is outstanding.
+- ~~**WebP lossy export** (ADR-007)~~ — **CLOSED 2026-08-20:** WebP export
+  stays lossless, decision final (ADR-018). CLAUDE.md's no-system-dependency
+  rule is the stronger constraint and the spec §13.2 lossy quality 1–100
+  requirement yields to it; PNG and JPEG remain the lossless/lossy export pair.
+  Reopen only if a pure-Rust lossy WebP encoder becomes viable — then it is a
+  new ADR, not a reversal of this one.

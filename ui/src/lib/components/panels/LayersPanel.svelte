@@ -37,9 +37,7 @@
   ];
 
   // Display order is top-to-bottom, i.e. the reverse of core storage order.
-  const displayIndices = $derived(
-    editor.layers.map((_, i) => editor.layers.length - 1 - i),
-  );
+  const displayIndices = $derived(editor.layers.map((_, i) => editor.layers.length - 1 - i));
 
   let editingIndex = $state<number | null>(null);
   let editingName = $state('');

@@ -9,6 +9,14 @@
   // the default build command (`bun run build` / `npm run build`) works with no
   // dashboard change; the default deploy command `npx wrangler deploy` uses
   // this config.
+  //
+  // Branch control — which branches deploy to production — is NOT expressible
+  // in this file. It belongs to the Workers Builds Git-integration
+  // configuration in the Cloudflare dashboard, alongside the build/deploy
+  // commands and root directory; wrangler config describes the Worker and its
+  // assets, not which branches the Git integration treats as production. See
+  // STATUS.md ("Release automation + Cloudflare deploy") — restricting
+  // production deploys to `main` is an open human action item there.
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "amigo-fineliner",
   "compatibility_date": "2026-07-10",

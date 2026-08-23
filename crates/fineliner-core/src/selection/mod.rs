@@ -201,7 +201,7 @@ impl SelectionMask {
             }
             crossings.sort_by(|p, q| p.partial_cmp(q).unwrap_or(std::cmp::Ordering::Equal));
             // Fill spans between consecutive crossing pairs.
-            for pair in crossings.chunks_exact(2) {
+            for pair in crossings.as_chunks::<2>().0 {
                 let x_lo = (pair[0] - 0.5).ceil().max(0.0) as i64;
                 let x_hi = ((pair[1] - 0.5).ceil() as i64).min(width as i64);
                 for x in x_lo..x_hi {

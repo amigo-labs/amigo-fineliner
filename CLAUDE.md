@@ -214,6 +214,7 @@ M9  Transform tools
 
 M10  Shapes + Text tools
     └─ Shapes: Line, Rectangle, Rounded Rectangle, Ellipse, Polygon (N-sided)
+       (spec §9.2 also lists Arrow — Phase 2, not dropped; see ADR-019)
     └─ Shape modes: Outline, Fill, Fill+Outline
     └─ Stroke width + dash pattern
     └─ Text tool: font family, size, bold, italic, color, anti-alias
@@ -404,6 +405,28 @@ ui/src/
 - Tables for structured comparisons
 - One blank line above and below code blocks and tables
 
+### 6.4 Line endings
+
+**LF everywhere.** `.gitattributes` declares `* text=auto eol=lf`: every text
+file is stored LF in the repository and checked out LF in the working tree.
+
+- Do not rely on `core.autocrlf`. It is a per-installation setting (Git for
+  Windows ships it as `true`, plain Git as `false`), so a repo that depends on
+  it has line endings that vary by machine. The attributes file wins over
+  `core.autocrlf`, which is the point of having it.
+- `eol=lf` rather than `eol=native` because the toolchain is LF-native end to
+  end: CI runs on Linux runners, `scripts/cf-build.sh` runs in Cloudflare's
+  Linux build image, and rustfmt / svelte-check / Vite all emit LF.
+- `*.sh` is pinned `text eol=lf` explicitly. A CRLF shebang fails in the Linux
+  build image, so this one is correctness, not tidiness.
+- Binary types (fonts, images, `.wasm`, `.fln`, archives) are declared `binary`
+  so they are never converted or diffed as text.
+- A working tree cloned before this file existed can still hold CRLF on disk.
+  That is harmless — the clean filter normalizes on `git add`, so `git status`
+  stays quiet. To make disk match the declaration:
+  `git ls-files -z | xargs -0 rm -f && git checkout -- .` (safe only with a
+  clean tree; it rewrites every file's mtime and so forces a full rebuild).
+
 ---
 
 ## 7. Testing Requirements
@@ -518,8 +541,14 @@ pnpm install
 pnpm dev                                      # Vite dev server (WASM hot-reload)
 pnpm build                                    # production bundle
 pnpm check                                    # WASM build + svelte-check TypeScript
-pnpm lint                                     # alias of `check` (no ESLint in Phase 1)
+pnpm lint                                     # ESLint (ADR-020)
+pnpm lint:fix                                 # ESLint with --fix
+pnpm format                                   # Prettier, write
+pnpm format:check                             # Prettier, verify only (CI uses this)
 ```
+
+`pnpm lint` and `pnpm format:check` need only `pnpm install` — no Rust
+toolchain, no wasm-pack build — so run them first when iterating.
 
 `pnpm test` (Vitest) and `pnpm test:e2e` (Playwright) do not exist yet — UI
 tests are a Phase 3 item (§7.5).
@@ -544,7 +573,7 @@ wrangler pages deploy ui/dist                 # or via CI
 cargo fmt && \
 cargo clippy --workspace -- -D warnings && \
 cargo test --workspace && \
-cd ui && pnpm check && pnpm build
+cd ui && pnpm lint && pnpm format:check && pnpm check && pnpm build
 ```
 
 All steps must pass. Do not commit if any step fails.
@@ -566,7 +595,7 @@ A task is done when **all** of the following hold:
 
 For UI tasks add:
 
-- [ ] `pnpm lint` and `pnpm check` clean
+- [ ] `pnpm lint`, `pnpm format:check` and `pnpm check` clean
 - [ ] `pnpm build` succeeds
 - [ ] Visually verified in dev server
 - [ ] Pointer events used (not mouse events)
@@ -826,6 +855,80 @@ ADR-017: WASM effects API for M11 — 2026-07
             shows the true result through blend modes and opacity. Indices and
             snake_case strings follow the established tool-option/command
             convention.
+
+ADR-018: WebP export stays lossless, ADR-007 final — 2026-08
+  Decision: ADR-007 is closed, not deferred: encode_webp produces lossless
+            WebP and Fineliner ships no lossy WebP export. The spec §13.2
+            requirement (lossy WebP, quality 1–100) yields to the
+            no-system-dependency rule (§4 M4: "image crate only. No
+            imagemagick, no system deps."). The question is settled, not
+            parked; only the appearance of a viable pure-Rust lossy WebP
+            encoder reopens it, and then as a new ADR. The spec has since been
+            amended to match (2026-08-20): docs/specs/fineliner.md §13.2 drops
+            the lossy-quality requirement, §17's export_webp signature drops its
+            quality argument, and DL-008 records the decision on the spec side.
+  Rationale: The two constraints are genuinely in conflict and one has to give.
+            No-system-deps is the stronger one: it is what keeps a single
+            `cargo build` / `wasm-pack build` working on every platform and on
+            wasm32 at all (libwebp is a C library), and it is reinforced by
+            §5.1's no-platform-dependencies rule and §9's ban on unapproved
+            dependencies — whereas lossy WebP is one format option in an
+            export matrix that already carries a lossless codec (PNG) and a
+            lossy one (JPEG). ADR-007 left this "revisit if a pure-Rust lossy
+            encoder becomes available", which kept it standing as an open
+            question in STATUS.md for three months with no candidate encoder;
+            recording it as final clears that decision debt without foreclosing
+            the one condition that would change the answer.
+
+ADR-019: The Arrow shape is Phase 2, not a non-goal — 2026-08
+  Decision: The Arrow stays in spec §9.2's shape list and lands in Phase 2 with
+            the rest of the shape work. M10's shape list above (Line, Rectangle,
+            Rounded Rectangle, Ellipse, Polygon) was Phase 1 scoping and is now
+            recorded as such rather than read as a removal. Whether the Arrow
+            ships as its own DrawShape variant or as start/end cap options on
+            Line is left to the Phase 2 task; the decision here is only that it
+            is in scope.
+  Rationale: Two readings were open — Phase 2 or documented non-goal — and the
+            spec's own mission settles it. §1.1 names "editing screenshots" as a
+            primary everyday task, and the arrow is that job's canonical
+            annotation primitive; recording it as a non-goal would drop a shape
+            more used than Polygon, which already shipped. The cost is small and
+            carries no architectural risk: DrawShape already carries stroke
+            width, dash pattern, anti-alias and the outline/fill/both modes, so
+            an arrow is arrowhead geometry on the existing rasterizer, not new
+            plumbing or a new wire concept. The non-goal answer would also have
+            required editing the spec to remove a capability — the more
+            expensive of the two outcomes in both directions.
+
+ADR-020: ESLint + Prettier are approved dev dependencies for ui/ — 2026-08
+  Decision: ui/ gets ESLint and Prettier as dev dependencies, approved under §9
+            (eight packages: prettier, prettier-plugin-svelte, eslint,
+            @eslint/js, typescript-eslint, eslint-plugin-svelte,
+            eslint-config-prettier, globals). `pnpm lint` stops being an alias
+            of `pnpm check` and becomes `eslint .`; `pnpm format` and
+            `pnpm format:check` are new; both run in CI's UI job alongside
+            `pnpm check` and `pnpm build`. ESLint runs WITHOUT type-aware rules
+            (`tseslint.configs.recommended`, not `recommendedTypeChecked`), and
+            Prettier is configured to the style already in the tree — printWidth
+            110 was measured, not picked (reformatting src/ costs +246/-52 lines
+            at width 100, +109/-83 at 110, +92/-133 at 120).
+            ui/src/lib/core/generated/ is excluded from both tools: it is
+            committed ts-rs output whose diff CI already gates (ADR-014).
+  Rationale: §9 requires explicit sign-off for new package.json dependencies and
+            this records it; the sign-off was given for the tooling, not as a
+            standing exception. svelte-check was the only linter, and it checks
+            types, not lint classes — the first ESLint run found a real defect
+            it cannot see (Modal.svelte's svelte-ignore named two a11y codes and
+            only one still fired, so the comment was quietly suppressing nothing
+            for half its width). Staying type-unaware is what keeps the value:
+            the lint job needs no tsconfig program, no Rust toolchain and no
+            wasm-pack build, so it is a bare `pnpm install` away from running,
+            while svelte-check keeps owning the type pass.
+            Prettier settles formatting arguments mechanically; matching the
+            existing style rather than its defaults kept the one-time
+            reformatting diff small and left the deliberately tabular data
+            tables (adjustments.ts and friends) untouched.
+
 ```
 
 ---
@@ -851,7 +954,8 @@ docs/specs/fineliner.md         The spec — what to build
 CLAUDE.md                       This file — how to build it
 STATUS.md                       Current session state, next task
 README.md                       Prerequisites, clone→run, verification
-.github/workflows/ci.yml        CI gate (fmt, clippy, test, pnpm check/build)
+.github/workflows/ci.yml        CI gate (fmt, clippy, test, pnpm lint/format/check/build)
+.gitattributes                  LF line endings, repo-wide (§6.4)
 .claude/skills/                 Project-specific skill recipes (planned, §14)
 
 crates/fineliner-core/          Pure logic, no I/O, no platform

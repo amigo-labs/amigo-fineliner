@@ -159,9 +159,7 @@
 
   /** Whether anything is on the overlay (else the animation loop idles). */
   function hasContent(): boolean {
-    return (
-      selectionPath !== null || selectionPreview.value !== null || shapePreview.value !== null
-    );
+    return selectionPath !== null || selectionPreview.value !== null || shapePreview.value !== null;
   }
 
   // The dash animation only runs while there is something to animate; an idle

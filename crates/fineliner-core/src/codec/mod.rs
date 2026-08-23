@@ -81,7 +81,7 @@ pub fn encode_png<W: Write>(
 pub fn encode_jpeg<W: Write>(buf: &ImageBuffer, writer: W, quality: u8) -> Result<(), CodecError> {
     let flat = over_background(buf.clone(), Color::WHITE);
     let mut rgb = Vec::with_capacity(flat.data().len() / 4 * 3);
-    for px in flat.data().chunks_exact(4) {
+    for px in flat.data().as_chunks::<4>().0 {
         rgb.extend_from_slice(&px[..3]);
     }
     let mut encoder = JpegEncoder::new_with_quality(writer, quality.clamp(1, 100));
@@ -208,7 +208,13 @@ mod tests {
         assert_eq!(back.width(), 16);
         // Lossy: assert mean absolute error per channel is small.
         let mut total = 0u64;
-        for (a, b) in src.data().chunks_exact(4).zip(back.data().chunks_exact(4)) {
+        for (a, b) in src
+            .data()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(back.data().as_chunks::<4>().0)
+        {
             for c in 0..3 {
                 total += (a[c] as i32 - b[c] as i32).unsigned_abs() as u64;
             }
